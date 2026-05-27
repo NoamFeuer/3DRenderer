@@ -12,27 +12,27 @@ Vect3& Vect3::operator=(const Vect3& other)
 }
 
 Vect3 Vect3::operator+(const Vect3& other) const {
-    return Vect3(
-        x + other.x,
-        y + other.y,
-        z + other.z
-    );
+	return Vect3(
+		x + other.x,
+		y + other.y,
+		z + other.z
+	);
 }
 
 Vect3 Vect3::operator-(const Vect3& other) const {
-    return Vect3(
-        x - other.x,
-        y - other.y,
-        z - other.z
-    );
+	return Vect3(
+		x - other.x,
+		y - other.y,
+		z - other.z
+	);
 }
 
 Vect3 Vect3::operator*(const Vect3& other) const {
-    return Vect3(
-        x * other.x,
-        y * other.y,
-        z * other.z
-    );
+	return Vect3(
+		x * other.x,
+		y * other.y,
+		z * other.z
+	);
 }
 
 Vect3 Vect3::operator*(float scalar) const {
