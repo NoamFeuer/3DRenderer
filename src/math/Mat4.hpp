@@ -1,6 +1,6 @@
 #pragma once
 
-#include"vect3.hpp"
+#include"Vect3.hpp"
 
 struct Mat4 {
 	float m[4][4];

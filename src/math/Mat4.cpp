@@ -1,5 +1,5 @@
 #include<cmath>
-#include"mat4.hpp"
+#include"Mat4.hpp"
 
 Mat4::Mat4() {
 	for (int i = 0; i < 4; i++)

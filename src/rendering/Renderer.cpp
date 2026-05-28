@@ -1,39 +1,48 @@
 #include <algorithm>
 #include"Renderer.hpp"
 
-void drawTriangle(SDL_Renderer* renderer, Vect3 v1, Vect3 v2, Vect3 v3) {
+void drawTriangle(SDL_Renderer* renderer, Triangle tri) {
+	Vect3 v1 = tri.vertices[0];
+	Vect3 v2 = tri.vertices[1];
+	Vect3 v3 = tri.vertices[2];
+
 	SDL_RenderDrawLine(renderer, v1.x, v1.y, v2.x, v2.y);
 	SDL_RenderDrawLine(renderer, v2.x, v2.y, v3.x, v3.y);
 	SDL_RenderDrawLine(renderer, v3.x, v3.y, v1.x, v1.y);
 }
 
-void fillTriangle(SDL_Renderer* renderer, Vect3 v1, Vect3 v2, Vect3 v3, Uint8 r, Uint8 g, Uint8 b) {
-    // sort vertices by y (v1 top, v3 bottom)
-    if (v1.y > v2.y) std::swap(v1, v2);
-    if (v1.y > v3.y) std::swap(v1, v3);
-    if (v2.y > v3.y) std::swap(v2, v3);
+void fillTriangle(SDL_Renderer* renderer, Triangle tri, Uint8 r, Uint8 g, Uint8 b) {
+	Vect3 v1 = tri.vertices[0];
+	Vect3 v2 = tri.vertices[1];
+	Vect3 v3 = tri.vertices[2];
+	
+	// sort vertices by y (v1 top, v3 bottom)
+	if (v1.y > v2.y) std::swap(v1, v2);
+	if (v1.y > v3.y) std::swap(v1, v3);
+	if (v2.y > v3.y) std::swap(v2, v3);
 
-    int y1 = (int)v1.y, y2 = (int)v2.y, y3 = (int)v3.y;
+	int y1 = (int)v1.y, y2 = (int)v2.y, y3 = (int)v3.y;
 
-    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+	SDL_SetRenderDrawColor(renderer, r, g, b, 255);
 
-    for (int y = y1; y <= y3; y++) {
-        // left and right x for this scanline
-        float t1 = (y3 == y1) ? 1.0f : (float)(y - y1) / (y3 - y1);
-        float xLeft = v1.x + t1 * (v3.x - v1.x);
+	for (int y = y1; y <= y3; y++) {
+		// left and right x for this scanline
+		float t1 = (y3 == y1) ? 1.0f : (float)(y - y1) / (y3 - y1);
+		float xLeft = v1.x + t1 * (v3.x - v1.x);
 
-        float xRight;
-        if (y < y2) {
-            float t2 = (y2 == y1) ? 0.0f : (float)(y - y1) / (y2 - y1);
-            xRight = v1.x + t2 * (v2.x - v1.x);
-        } else {
-            float t2 = (y3 == y2) ? 1.0f : (float)(y - y2) / (y3 - y2);
-            xRight = v2.x + t2 * (v3.x - v2.x);
-        }
+		float xRight;
+		if (y < y2) {
+			float t2 = (y2 == y1) ? 0.0f : (float)(y - y1) / (y2 - y1);
+			xRight = v1.x + t2 * (v2.x - v1.x);
+		}
+		else {
+			float t2 = (y3 == y2) ? 1.0f : (float)(y - y2) / (y3 - y2);
+			xRight = v2.x + t2 * (v3.x - v2.x);
+		}
 
-        if (xLeft > xRight) std::swap(xLeft, xRight);
-        SDL_RenderDrawLine(renderer, (int)xLeft, y, (int)xRight, y);
-    }
+		if (xLeft > xRight) std::swap(xLeft, xRight);
+		SDL_RenderDrawLine(renderer, (int)xLeft, y, (int)xRight, y);
+	}
 }
 
 Vect3 toScreenSpace(const Vect3& v, int width, int height) {
@@ -72,6 +81,13 @@ void drawMesh(SDL_Renderer* renderer, const Mesh& mesh, const Mat4& proj, const 
 
 		// draw with brightness
 		Uint8 c = (Uint8)(brightness * 255);
-		fillTriangle(renderer, p1, p2, p3, c, c, c);
+
+
+		Triangle triangle;
+		triangle.vertices[0] = p1;
+		triangle.vertices[1] = p2;
+		triangle.vertices[2] = p3;
+
+		fillTriangle(renderer, triangle, c, c, c);
 	}
 }
