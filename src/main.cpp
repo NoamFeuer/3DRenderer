@@ -5,8 +5,8 @@
 #include "math/Mat4.hpp"
 
 const float FOV = 90.0f;
-const int SCREEN_WIDTH = 800.0f;
-const int SCREEN_HEIGHT = 600.0f;
+const int SCREEN_WIDTH = 800;
+const int SCREEN_HEIGHT = 600;
 
 int main(int argc, char* argv[]) {
 	SDL_Init(SDL_INIT_VIDEO);
@@ -23,7 +23,6 @@ int main(int argc, char* argv[]) {
 
 	Mesh cube = createCube();
 	Mat4 proj = Mat4::projection(FOV * M_PI/180.0f, 800.0f/600.0f, 0.1f, 100.0f);
-	Mat4 trans = Mat4::translation(-0.5f, -0.5f, 3.0f);
 
 	float angle = 0.0f;
 	bool running = true;
@@ -33,13 +32,16 @@ int main(int argc, char* argv[]) {
 		while (SDL_PollEvent(&e))
 			if (e.type == SDL_QUIT) running = false;
 
+		clearDepthBuffer(SCREEN_WIDTH, SCREEN_HEIGHT);
+
 		angle += 0.002f;
 
 		Mat4 center = Mat4::translation(-0.5f, -0.5f, -0.5f);
 		Mat4 rotY = Mat4::rotationY(angle);
+		Mat4 rotX = Mat4::rotationX(angle);
 		Mat4 trans = Mat4::translation(0.0f, 0.0f, 3.0f);
 
-		Mat4 transform = trans * rotY * center; 
+		Mat4 transform = trans * rotY * rotX * center; 
 
 		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 		SDL_RenderClear(renderer);
