@@ -29,8 +29,9 @@ int main(int argc, char* argv[]) {
 	SDL_Event e;
 
 	while (running) {
-		while (SDL_PollEvent(&e))
+		while (SDL_PollEvent(&e)){
 			if (e.type == SDL_QUIT) running = false;
+		}
 
 		clearDepthBuffer(SCREEN_WIDTH, SCREEN_HEIGHT);
 
