@@ -1,16 +1,31 @@
-cmake_minimum_required(VERSION 3.16)
-project(3DRenderer VERSION 1.0)
+cmake_minimum_required(VERSION 3.20)
+project(GraphicsEngine LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-find_package(SDL2 REQUIRED)
+find_package(Vulkan REQUIRED)
+find_package(glfw3 REQUIRED)
 
-add_executable(
-        renderer src/main.cpp
-        src/math/Mat4.cpp
-        src/math/Vect3.cpp
-        src/rendering/Mesh.cpp
-        src/rendering/Renderer.cpp)
+file(GLOB_RECURSE ENGINE_SOURCES
+    "${CMAKE_SOURCE_DIR}/src/*.cpp"
+)
 
-target_link_libraries(renderer PRIVATE SDL2::SDL2 SDL2::SDL2main)
+add_executable(${PROJECT_NAME}
+    src/main.cpp
+    ${ENGINE_SOURCES}
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    Vulkan::Vulkan
+    glfw
+)
+
+target_compile_options(${PROJECT_NAME} PRIVATE
+    -Wall -Wextra
+)

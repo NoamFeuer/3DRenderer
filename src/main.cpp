@@ -1,60 +1,56 @@
-#include <SDL2/SDL.h>
-#include <cmath>
-#include "rendering/Mesh.hpp"
-#include "rendering/Renderer.hpp"
-#include "math/Mat4.hpp"
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+#include <iostream>
 
-const float FOV = 90.0f;
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
+#include "rendering/VulkanContext.hpp"
 
-int main(int argc, char* argv[]) {
-	SDL_Init(SDL_INIT_VIDEO);
+const int WINDOW_WIDTH = 800;
+const int WINDOW_HEIGHT = 600;
 
-	SDL_Window* window = SDL_CreateWindow(
-		"3D Rendering Engine",
-		SDL_WINDOWPOS_CENTERED,
-		SDL_WINDOWPOS_CENTERED,
-		SCREEN_WIDTH, SCREEN_HEIGHT,
-		SDL_WINDOW_SHOWN
-	);
+int main() {
+    glfwSetErrorCallback([](int error, const char* desc) {
+        std::cerr << "GLFW Error " << error << ": " << desc << "\n";
+    });
 
-	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW\n";
+        return -1;
+    }
 
-	Mesh cube = createCube();
-	Mat4 proj = Mat4::projection(FOV * M_PI/180.0f, 800.0f/600.0f, 0.1f, 100.0f);
+    std::cout << "GLFW version: " << glfwGetVersionString() << "\n";
 
-	float angle = 0.0f;
-	bool running = true;
-	SDL_Event e;
+    // We're not using OpenGL, so tell GLFW not to create a GL context
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-	while (running) {
-		while (SDL_PollEvent(&e)){
-			if (e.type == SDL_QUIT) running = false;
-		}
+    GLFWwindow* window = glfwCreateWindow(
+        WINDOW_WIDTH, WINDOW_HEIGHT,
+        "My Engine", nullptr, nullptr
+    );
 
-		clearDepthBuffer(SCREEN_WIDTH, SCREEN_HEIGHT);
+    if (!window) {
+        std::cerr << "Failed to create window\n";
+        glfwTerminate();
+        return -1;
+    }
 
-		angle += 0.002f;
+    VulkanContext vulkanContext;
+    try {
+        vulkanContext.init(window);
+    } catch (const std::exception& e) {
+        std::cerr << "Vulkan error: " << e.what() << "\n";
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return -1;
+    }
 
-		Mat4 center = Mat4::translation(-0.5f, -0.5f, -0.5f);
-		Mat4 rotY = Mat4::rotationY(angle);
-		Mat4 rotX = Mat4::rotationX(angle);
-		Mat4 trans = Mat4::translation(0.0f, 0.0f, 3.0f);
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+        vulkanContext.drawFrame(window);
+    }
 
-		Mat4 transform = trans * rotY * rotX * center; 
-
-		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-		SDL_RenderClear(renderer);
-
-		SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-		drawMesh(renderer, cube, proj, transform, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-		SDL_RenderPresent(renderer);
-	}
-
-	SDL_DestroyRenderer(renderer);
-	SDL_DestroyWindow(window);
-	SDL_Quit();
-	return 0;
+    vulkanContext.waitIdle();
+    vulkanContext.cleanup();
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
 }
