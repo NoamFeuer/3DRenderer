@@ -1,9 +1,10 @@
 #pragma once
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+#include <vulkan/vulkan.h>
 #include <vector>
 #include <optional>
+
+#include "../core/Window.hpp"
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -22,7 +23,7 @@ struct SwapChainSupportDetails {
 
 class VulkanContext {
 public:
-    void init(GLFWwindow* window);
+    void init(Window& window);
     void cleanup();
 
     VkInstance getInstance() const { return instance; }
@@ -36,7 +37,7 @@ public:
     VkExtent2D getSwapChainExtent() const { return swapChainExtent; }
     const std::vector<VkImageView>& getSwapChainImageViews() const { return swapChainImageViews; }
 
-    void drawFrame(GLFWwindow* window);
+    void drawFrame(Window& window);
     void waitIdle();
 
 private:
@@ -67,7 +68,7 @@ private:
     bool checkValidationLayerSupport();
     std::vector<const char*> getRequiredExtensions();
 
-    void createSurface(GLFWwindow* window);
+    void createSurface(Window& window);
 
     void pickPhysicalDevice();
     bool isDeviceSuitable(VkPhysicalDevice device);
@@ -79,8 +80,8 @@ private:
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
     VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window);
-    void createSwapChain(GLFWwindow* window);
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, Window& window);
+    void createSwapChain(Window& window);
     void createImageViews();
 
     void createRenderPass();

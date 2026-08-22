@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <limits>
 
-void VulkanContext::init(GLFWwindow* window) {
+void VulkanContext::init(Window& window) {
     createInstance();
     std::cout << "Vulkan instance created successfully\n";
 
@@ -25,12 +25,15 @@ void VulkanContext::init(GLFWwindow* window) {
 }
 
 void VulkanContext::cleanup() {
-    if (renderFinishedSemaphore != VK_NULL_HANDLE)
+    if (renderFinishedSemaphore != VK_NULL_HANDLE) {
         vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-    if (imageAvailableSemaphore != VK_NULL_HANDLE)
+    }
+    if (imageAvailableSemaphore != VK_NULL_HANDLE) {
         vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-    if (inFlightFence != VK_NULL_HANDLE)
+    }
+    if (inFlightFence != VK_NULL_HANDLE) {
         vkDestroyFence(device, inFlightFence, nullptr);
+    }
 
     if (commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(device, commandPool, nullptr);
@@ -99,12 +102,13 @@ std::vector<const char*> VulkanContext::getRequiredExtensions() {
 }
 
 void VulkanContext::createInstance() {
-    if (enableValidationLayers && !checkValidationLayerSupport())
+    if (enableValidationLayers && !checkValidationLayerSupport()) {
         throw std::runtime_error("Validation layers requested, but not available!");
+    }
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "3D Engine";
+    appInfo.pApplicationName = "My Engine";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "No Engine";
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -121,17 +125,19 @@ void VulkanContext::createInstance() {
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
-    }
-    else
+    } else {
         createInfo.enabledLayerCount = 0;
+    }
 
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
+    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create Vulkan instance!");
+    }
 }
 
-void VulkanContext::createSurface(GLFWwindow* window) {
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS)
+void VulkanContext::createSurface(Window& window) {
+    if (glfwCreateWindowSurface(instance, window.getHandle(), nullptr, &surface) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create window surface!");
+    }
     std::cout << "Window surface created\n";
 }
 
@@ -146,13 +152,15 @@ QueueFamilyIndices VulkanContext::findQueueFamilies(VkPhysicalDevice device) {
 
     int i = 0;
     for (const auto& queueFamily : queueFamilies) {
-        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.graphicsFamily = i;
+        }
 
         VkBool32 presentSupport = false;
         vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-        if (presentSupport)
+        if (presentSupport) {
             indices.presentFamily = i;
+        }
 
         if (indices.isComplete()) break;
         i++;
@@ -194,8 +202,9 @@ void VulkanContext::pickPhysicalDevice() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 
-    if (deviceCount == 0)
+    if (deviceCount == 0) {
         throw std::runtime_error("Failed to find a GPU with Vulkan support!");
+    }
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
@@ -209,8 +218,9 @@ void VulkanContext::pickPhysicalDevice() {
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(device, &props);
 
-        if (fallback == VK_NULL_HANDLE)
+        if (fallback == VK_NULL_HANDLE) {
             fallback = device;
+        }
 
         if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             physicalDevice = device;
@@ -219,11 +229,13 @@ void VulkanContext::pickPhysicalDevice() {
         }
     }
 
-    if (physicalDevice == VK_NULL_HANDLE)
+    if (physicalDevice == VK_NULL_HANDLE) {
         physicalDevice = fallback;
+    }
 
-    if (physicalDevice == VK_NULL_HANDLE)
+    if (physicalDevice == VK_NULL_HANDLE) {
         throw std::runtime_error("Failed to find a suitable GPU!");
+    }
 
     if (physicalDevice != VK_NULL_HANDLE) {
         VkPhysicalDeviceProperties props{};
@@ -266,11 +278,13 @@ void VulkanContext::createLogicalDevice() {
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
-    } else
+    } else {
         createInfo.enabledLayerCount = 0;
+    }
 
-    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
+    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create logical device!");
+    }
 
     vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
     vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
@@ -314,19 +328,21 @@ VkSurfaceFormatKHR VulkanContext::chooseSwapSurfaceFormat(const std::vector<VkSu
 VkPresentModeKHR VulkanContext::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
     for (const auto& availablePresentMode : availablePresentModes) {
         // Mailbox = triple buffering, low latency, no tearing. Prefer it if the driver supports it.
-        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
+        if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
             return availablePresentMode;
+        }
     }
     // FIFO is guaranteed to be available by the spec — standard vsync behavior.
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanContext::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) {
-    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+VkExtent2D VulkanContext::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, Window& window) {
+    if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return capabilities.currentExtent;
+    }
 
     int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
+    glfwGetFramebufferSize(window.getHandle(), &width, &height);
 
     VkExtent2D actualExtent = {
         static_cast<uint32_t>(width),
@@ -341,7 +357,7 @@ VkExtent2D VulkanContext::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capab
     return actualExtent;
 }
 
-void VulkanContext::createSwapChain(GLFWwindow* window) {
+void VulkanContext::createSwapChain(Window& window) {
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice);
 
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -384,8 +400,9 @@ void VulkanContext::createSwapChain(GLFWwindow* window) {
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS)
+    if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create swap chain!");
+    }
 
     vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
     swapChainImages.resize(imageCount);
@@ -416,8 +433,9 @@ void VulkanContext::createImageViews() {
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
-        if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS)
+        if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create image views!");
+        }
     }
 
     std::cout << "Image views created\n";
@@ -462,8 +480,9 @@ void VulkanContext::createRenderPass() {
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create render pass!");
+    }
 
     std::cout << "Render pass created\n";
 }
@@ -483,8 +502,9 @@ void VulkanContext::createFramebuffers() {
         framebufferInfo.height = swapChainExtent.height;
         framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
+        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create framebuffer!");
+        }
     }
 
     std::cout << "Framebuffers created\n";
@@ -559,7 +579,7 @@ void VulkanContext::createSyncObjects() {
     }
 }
 
-void VulkanContext::drawFrame(GLFWwindow* window) {
+void VulkanContext::drawFrame(Window& window) {
     (void)window; // will matter once we handle swapchain recreation on resize
 
     vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
