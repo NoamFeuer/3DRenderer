@@ -7,8 +7,9 @@
 #include <string>
 #include <algorithm>
 #include <limits>
+#include <fstream>
 
-void VulkanContext::init(Window& window) {
+void VulkanContext::init(Window& window, const std::vector<Vertex>& vertices) {
     createInstance();
     std::cout << "Vulkan instance created successfully\n";
 
@@ -18,8 +19,10 @@ void VulkanContext::init(Window& window) {
     createSwapChain(window);
     createImageViews();
     createRenderPass();
+    createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    createVertexBuffer(vertices);
     createCommandBuffer();
     createSyncObjects();
 }
@@ -40,10 +43,28 @@ void VulkanContext::cleanup() {
         commandPool = VK_NULL_HANDLE;
     }
 
+    if (vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, vertexBuffer, nullptr);
+        vertexBuffer = VK_NULL_HANDLE;
+    }
+    if (vertexBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, vertexBufferMemory, nullptr);
+        vertexBufferMemory = VK_NULL_HANDLE;
+    }
+
     for (auto framebuffer : swapChainFramebuffers) {
         vkDestroyFramebuffer(device, framebuffer, nullptr);
     }
     swapChainFramebuffers.clear();
+
+    if (graphicsPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, graphicsPipeline, nullptr);
+        graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+        pipelineLayout = VK_NULL_HANDLE;
+    }
 
     if (renderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(device, renderPass, nullptr);
@@ -487,6 +508,152 @@ void VulkanContext::createRenderPass() {
     std::cout << "Render pass created\n";
 }
 
+namespace {
+// Reads a whole file (SPIR-V bytecode) into a byte buffer.
+std::vector<char> readFile(const std::string& filename) {
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open shader file: " + filename);
+    }
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    std::vector<char> buffer(fileSize);
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+    file.close();
+    return buffer;
+}
+}
+
+VkShaderModule VulkanContext::createShaderModule(const std::vector<char>& code) {
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = code.size();
+    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create shader module!");
+    }
+    return shaderModule;
+}
+
+void VulkanContext::createGraphicsPipeline() {
+    // Shader paths are relative to the executable's working directory.
+    // CMake compiles shaders into <build>/shaders/, matching this.
+    auto vertShaderCode = readFile("shaders/triangle.vert.spv");
+    auto fragShaderCode = readFile("shaders/triangle.frag.spv");
+
+    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+    // Describes how to read Vertex structs from the bound vertex buffer.
+    auto bindingDescription = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    // Viewport and scissor are set dynamically per-frame rather than baked
+    // into the pipeline, so window resizes don't require rebuilding it.
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE; // no alpha blending yet
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    // Empty layout for now — no uniforms/push constants yet.
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create pipeline layout!");
+    }
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create graphics pipeline!");
+    }
+
+    // Shader modules are only needed during pipeline creation — safe to destroy now.
+    vkDestroyShaderModule(device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+
+    std::cout << "Graphics pipeline created\n";
+}
+
 void VulkanContext::createFramebuffers() {
     swapChainFramebuffers.resize(swapChainImageViews.size());
 
@@ -523,6 +690,71 @@ void VulkanContext::createCommandPool() {
     }
 }
 
+uint32_t VulkanContext::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        // typeFilter is a bitmask of memory types the buffer can use;
+        // we also need the type to have all the property flags we asked for
+        // (e.g. host-visible + host-coherent, so the CPU can write to it directly).
+        bool typeSupported = typeFilter & (1 << i);
+        bool hasRequiredProperties =
+            (memProperties.memoryTypes[i].propertyFlags & properties) == properties;
+
+        if (typeSupported && hasRequiredProperties) {
+            return i;
+        }
+    }
+
+    throw std::runtime_error("Failed to find suitable GPU memory type!");
+}
+
+void VulkanContext::createVertexBuffer(const std::vector<Vertex>& vertices) {
+    vertexCount = static_cast<uint32_t>(vertices.size());
+    VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create vertex buffer!");
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    // HOST_VISIBLE: CPU can map and write to this memory directly.
+    // HOST_COHERENT: no manual flush needed after writing — simplest option,
+    // though a staging buffer (device-local + a copy) is more performant for
+    // data that doesn't change often. Fine for now; worth revisiting later.
+    allocInfo.memoryTypeIndex = findMemoryType(
+        memRequirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate vertex buffer memory!");
+    }
+
+    vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+    // Map the memory, copy the vertex data in, unmap. Straightforward since
+    // this memory is host-visible/coherent.
+    void* data;
+    vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
+    vkUnmapMemory(device, vertexBufferMemory);
+
+    std::cout << "Vertex buffer created with " << vertexCount << " vertices\n";
+}
+
 void VulkanContext::createCommandBuffer() {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -556,7 +788,30 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     renderPassInfo.pClearValues = &clearColor;
 
     vkCmdBeginRenderPass(cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    // No draw calls yet — no pipeline/mesh exists. This just clears the screen.
+
+    vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+    // Viewport/scissor are dynamic state, so they must be set per-frame.
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swapChainExtent.width);
+    viewport.height = static_cast<float>(swapChainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmdBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = swapChainExtent;
+    vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
+
+    VkBuffer vertexBuffers[] = { vertexBuffer };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
+
+    vkCmdDraw(cmdBuffer, vertexCount, 1, 0, 0);
+
     vkCmdEndRenderPass(cmdBuffer);
 
     if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS) {

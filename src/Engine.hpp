@@ -17,8 +17,7 @@ public:
     Engine& operator=(const Engine&) = delete;
 
     // Runs the main loop until the window is closed.
-    // updateCallback is called once per frame, before rendering — this is
-    // where a user of the library would put their own per-frame logic.
+    // updateCallback is called once per frame, before rendering. This is where a user of the library would put their own per-frame logic.
     void run(const std::function<void(float deltaTime)>& updateCallback = nullptr);
 
 private:

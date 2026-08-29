@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "../core/Window.hpp"
+#include "Vertex.hpp"
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -23,7 +24,7 @@ struct SwapChainSupportDetails {
 
 class VulkanContext {
 public:
-    void init(Window& window);
+    void init(Window& window, const std::vector<Vertex>& vertices);
     void cleanup();
 
     VkInstance getInstance() const { return instance; }
@@ -57,6 +58,13 @@ private:
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+
+    VkBuffer vertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+    uint32_t vertexCount = 0;
+
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
@@ -85,11 +93,16 @@ private:
     void createImageViews();
 
     void createRenderPass();
+    void createGraphicsPipeline();
+    VkShaderModule createShaderModule(const std::vector<char>& code);
     void createFramebuffers();
     void createCommandPool();
     void createCommandBuffer();
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void createSyncObjects();
+
+    void createVertexBuffer(const std::vector<Vertex>& vertices);
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME

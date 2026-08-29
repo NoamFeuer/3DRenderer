@@ -4,7 +4,16 @@
 Engine::Engine(int width, int height, const std::string& title) {
     window = std::make_unique<Window>(width, height, title);
     vulkanContext = std::make_unique<VulkanContext>();
-    vulkanContext->init(*window);
+
+    // Temporary hardcoded triangle — this is where mesh loading will plug in
+    // once Engine exposes a proper way to load/add geometry.
+    std::vector<Vertex> triangleVertices = {
+        { Vect3(0.0f, -0.5f, 0.0f), Vect3(1.0f, 0.0f, 0.0f) },
+        { Vect3(0.5f,  0.5f, 0.0f), Vect3(0.0f, 1.0f, 0.0f) },
+        { Vect3(-0.5f, 0.5f, 0.0f), Vect3(0.0f, 0.0f, 1.0f) },
+    };
+
+    vulkanContext->init(*window, triangleVertices);
 }
 
 Engine::~Engine() {
@@ -26,8 +35,9 @@ void Engine::run(const std::function<void(float deltaTime)>& updateCallback) {
 
         window->pollEvents();
 
-        if (updateCallback)
+        if (updateCallback) {
             updateCallback(deltaTime);
+        }
 
         vulkanContext->drawFrame(*window);
     }
