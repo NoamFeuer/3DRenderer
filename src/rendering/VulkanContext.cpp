@@ -9,7 +9,7 @@
 #include <limits>
 #include <fstream>
 
-void VulkanContext::init(Window& window, const std::vector<Vertex>& vertices) {
+void VulkanContext::init(Window& window) {
     createInstance();
     std::cout << "Vulkan instance created successfully\n";
 
@@ -22,7 +22,7 @@ void VulkanContext::init(Window& window, const std::vector<Vertex>& vertices) {
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
-    createVertexBuffer(vertices);
+    createVertexBuffer();
     createCommandBuffer();
     createSyncObjects();
 }
@@ -43,6 +43,10 @@ void VulkanContext::cleanup() {
         commandPool = VK_NULL_HANDLE;
     }
 
+    if (vertexBufferMapped != nullptr) {
+        vkUnmapMemory(device, vertexBufferMemory);
+        vertexBufferMapped = nullptr;
+    }
     if (vertexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(device, vertexBuffer, nullptr);
         vertexBuffer = VK_NULL_HANDLE;
@@ -117,7 +121,6 @@ bool VulkanContext::checkValidationLayerSupport() {
 std::vector<const char*> VulkanContext::getRequiredExtensions() {
     uint32_t glfwExtensionCount = 0;
     const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
     return extensions;
 }
@@ -230,21 +233,20 @@ void VulkanContext::pickPhysicalDevice() {
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
-    // Prefer a discrete GPU if one is suitable; otherwise take the first suitable device.
     VkPhysicalDevice fallback = VK_NULL_HANDLE;
 
-    for (const auto& device : devices) {
-        if (!isDeviceSuitable(device)) continue;
+    for (const auto& dev : devices) {
+        if (!isDeviceSuitable(dev)) continue;
 
         VkPhysicalDeviceProperties props{};
-        vkGetPhysicalDeviceProperties(device, &props);
+        vkGetPhysicalDeviceProperties(dev, &props);
 
         if (fallback == VK_NULL_HANDLE) {
-            fallback = device;
+            fallback = dev;
         }
 
         if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-            physicalDevice = device;
+            physicalDevice = dev;
             std::cout << "Selected GPU: " << props.deviceName << "\n";
             break;
         }
@@ -258,11 +260,9 @@ void VulkanContext::pickPhysicalDevice() {
         throw std::runtime_error("Failed to find a suitable GPU!");
     }
 
-    if (physicalDevice != VK_NULL_HANDLE) {
-        VkPhysicalDeviceProperties props{};
-        vkGetPhysicalDeviceProperties(physicalDevice, &props);
-        std::cout << "Using GPU: " << props.deviceName << "\n";
-    }
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &props);
+    std::cout << "Using GPU: " << props.deviceName << "\n";
 }
 
 void VulkanContext::createLogicalDevice() {
@@ -284,7 +284,7 @@ void VulkanContext::createLogicalDevice() {
         queueCreateInfos.push_back(queueCreateInfo);
     }
 
-    VkPhysicalDeviceFeatures deviceFeatures{}; // no special features needed yet
+    VkPhysicalDeviceFeatures deviceFeatures{};
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -294,8 +294,6 @@ void VulkanContext::createLogicalDevice() {
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
-    // Device-level validation layers are deprecated in modern Vulkan (instance-level
-    // layers cover both), but setting these keeps compatibility with older loaders.
     if (enableValidationLayers) {
         createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         createInfo.ppEnabledLayerNames = validationLayers.data();
@@ -342,18 +340,15 @@ VkSurfaceFormatKHR VulkanContext::chooseSwapSurfaceFormat(const std::vector<VkSu
             return availableFormat;
         }
     }
-    // Fallback: just take whatever's first if our preferred format isn't available.
     return availableFormats[0];
 }
 
 VkPresentModeKHR VulkanContext::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
     for (const auto& availablePresentMode : availablePresentModes) {
-        // Mailbox = triple buffering, low latency, no tearing. Prefer it if the driver supports it.
         if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
             return availablePresentMode;
         }
     }
-    // FIFO is guaranteed to be available by the spec — standard vsync behavior.
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -385,7 +380,6 @@ void VulkanContext::createSwapChain(Window& window) {
     VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
     VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities, window);
 
-    // Request one more than the minimum to avoid waiting on the driver between frames.
     uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
     if (swapChainSupport.capabilities.maxImageCount > 0 &&
         imageCount > swapChainSupport.capabilities.maxImageCount) {
@@ -406,12 +400,10 @@ void VulkanContext::createSwapChain(Window& window) {
     uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
     if (indices.graphicsFamily != indices.presentFamily) {
-        // Images shared across two distinct queue families need CONCURRENT mode.
         createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
         createInfo.queueFamilyIndexCount = 2;
         createInfo.pQueueFamilyIndices = queueFamilyIndices;
     } else {
-        // Same family for both — EXCLUSIVE is simpler and faster.
         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     }
 
@@ -466,12 +458,12 @@ void VulkanContext::createRenderPass() {
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapChainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;   // clear the image at the start of the pass
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // keep the result so it can be presented
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // ready to hand to the swapchain
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
@@ -482,8 +474,6 @@ void VulkanContext::createRenderPass() {
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
 
-    // Ensures the render pass waits for the swapchain image to actually be available
-    // before the color attachment stage tries to write to it.
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
@@ -509,7 +499,6 @@ void VulkanContext::createRenderPass() {
 }
 
 namespace {
-// Reads a whole file (SPIR-V bytecode) into a byte buffer.
 std::vector<char> readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
@@ -538,8 +527,6 @@ VkShaderModule VulkanContext::createShaderModule(const std::vector<char>& code) 
 }
 
 void VulkanContext::createGraphicsPipeline() {
-    // Shader paths are relative to the executable's working directory.
-    // CMake compiles shaders into <build>/shaders/, matching this.
     auto vertShaderCode = readFile("shaders/triangle.vert.spv");
     auto fragShaderCode = readFile("shaders/triangle.frag.spv");
 
@@ -560,7 +547,6 @@ void VulkanContext::createGraphicsPipeline() {
 
     VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
-    // Describes how to read Vertex structs from the bound vertex buffer.
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
@@ -576,8 +562,6 @@ void VulkanContext::createGraphicsPipeline() {
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    // Viewport and scissor are set dynamically per-frame rather than baked
-    // into the pipeline, so window resizes don't require rebuilding it.
     std::vector<VkDynamicState> dynamicStates = {
         VK_DYNAMIC_STATE_VIEWPORT,
         VK_DYNAMIC_STATE_SCISSOR
@@ -610,7 +594,7 @@ void VulkanContext::createGraphicsPipeline() {
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE; // no alpha blending yet
+    colorBlendAttachment.blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -618,7 +602,6 @@ void VulkanContext::createGraphicsPipeline() {
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
 
-    // Empty layout for now — no uniforms/push constants yet.
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 0;
@@ -647,7 +630,6 @@ void VulkanContext::createGraphicsPipeline() {
         throw std::runtime_error("Failed to create graphics pipeline!");
     }
 
-    // Shader modules are only needed during pipeline creation — safe to destroy now.
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 
@@ -695,9 +677,6 @@ uint32_t VulkanContext::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlag
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-        // typeFilter is a bitmask of memory types the buffer can use;
-        // we also need the type to have all the property flags we asked for
-        // (e.g. host-visible + host-coherent, so the CPU can write to it directly).
         bool typeSupported = typeFilter & (1 << i);
         bool hasRequiredProperties =
             (memProperties.memoryTypes[i].propertyFlags & properties) == properties;
@@ -710,9 +689,8 @@ uint32_t VulkanContext::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlag
     throw std::runtime_error("Failed to find suitable GPU memory type!");
 }
 
-void VulkanContext::createVertexBuffer(const std::vector<Vertex>& vertices) {
-    vertexCount = static_cast<uint32_t>(vertices.size());
-    VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
+void VulkanContext::createVertexBuffer() {
+    VkDeviceSize bufferSize = sizeof(Vertex) * MAX_VERTICES;
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -730,10 +708,6 @@ void VulkanContext::createVertexBuffer(const std::vector<Vertex>& vertices) {
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    // HOST_VISIBLE: CPU can map and write to this memory directly.
-    // HOST_COHERENT: no manual flush needed after writing — simplest option,
-    // though a staging buffer (device-local + a copy) is more performant for
-    // data that doesn't change often. Fine for now; worth revisiting later.
     allocInfo.memoryTypeIndex = findMemoryType(
         memRequirements.memoryTypeBits,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
@@ -745,14 +719,23 @@ void VulkanContext::createVertexBuffer(const std::vector<Vertex>& vertices) {
 
     vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
 
-    // Map the memory, copy the vertex data in, unmap. Straightforward since
-    // this memory is host-visible/coherent.
-    void* data;
-    vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
-    vkUnmapMemory(device, vertexBufferMemory);
+    // Persistently mapped for the buffer's whole lifetime — every frame we
+    // just memcpy fresh data straight into this pointer, no repeated
+    // map/unmap calls needed.
+    vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &vertexBufferMapped);
 
-    std::cout << "Vertex buffer created with " << vertexCount << " vertices\n";
+    std::cout << "Vertex buffer created (capacity: " << MAX_VERTICES << " vertices)\n";
+}
+
+void VulkanContext::updateVertexBuffer(const std::vector<Vertex>& vertices) {
+    if (vertices.size() > MAX_VERTICES) {
+        throw std::runtime_error("Too many vertices for vertex buffer capacity! Increase MAX_VERTICES.");
+    }
+
+    vertexCount = static_cast<uint32_t>(vertices.size());
+    if (vertexCount > 0) {
+        memcpy(vertexBufferMapped, vertices.data(), sizeof(Vertex) * vertexCount);
+    }
 }
 
 void VulkanContext::createCommandBuffer() {
@@ -782,7 +765,6 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = swapChainExtent;
 
-    // Clear color: dark blue-grey, just to prove the pipeline is actually running.
     VkClearValue clearColor = { { { 0.02f, 0.02f, 0.05f, 1.0f } } };
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
@@ -791,7 +773,6 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
 
     vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-    // Viewport/scissor are dynamic state, so they must be set per-frame.
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -806,11 +787,12 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
 
-    VkBuffer vertexBuffers[] = { vertexBuffer };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
-
-    vkCmdDraw(cmdBuffer, vertexCount, 1, 0, 0);
+    if (vertexCount > 0) {
+        VkBuffer vertexBuffers[] = { vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdDraw(cmdBuffer, vertexCount, 1, 0, 0);
+    }
 
     vkCmdEndRenderPass(cmdBuffer);
 
@@ -825,7 +807,7 @@ void VulkanContext::createSyncObjects() {
 
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // start signaled so the first frame doesn't hang
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
         vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
@@ -835,7 +817,7 @@ void VulkanContext::createSyncObjects() {
 }
 
 void VulkanContext::drawFrame(Window& window) {
-    (void)window; // will matter once we handle swapchain recreation on resize
+    (void)window;
 
     vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
     vkResetFences(device, 1, &inFlightFence);

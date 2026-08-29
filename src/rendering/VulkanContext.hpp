@@ -24,7 +24,7 @@ struct SwapChainSupportDetails {
 
 class VulkanContext {
 public:
-    void init(Window& window, const std::vector<Vertex>& vertices);
+    void init(Window& window);
     void cleanup();
 
     VkInstance getInstance() const { return instance; }
@@ -37,6 +37,11 @@ public:
     VkFormat getSwapChainImageFormat() const { return swapChainImageFormat; }
     VkExtent2D getSwapChainExtent() const { return swapChainExtent; }
     const std::vector<VkImageView>& getSwapChainImageViews() const { return swapChainImageViews; }
+
+    // Copies the given vertices into the GPU-visible vertex buffer.
+    // Call this once per frame, before drawFrame(), with whatever the
+    // Renderer accumulated that frame.
+    void updateVertexBuffer(const std::vector<Vertex>& vertices);
 
     void drawFrame(Window& window);
     void waitIdle();
@@ -61,8 +66,13 @@ private:
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
 
+    // Vertex buffer is allocated once, with fixed capacity, and persistently
+    // mapped — every frame we just memcpy new data into it rather than
+    // recreating buffers/memory each time.
+    static constexpr uint32_t MAX_VERTICES = 100000;
     VkBuffer vertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+    void* vertexBufferMapped = nullptr;
     uint32_t vertexCount = 0;
 
     VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -96,12 +106,13 @@ private:
     void createGraphicsPipeline();
     VkShaderModule createShaderModule(const std::vector<char>& code);
     void createFramebuffers();
+
     void createCommandPool();
     void createCommandBuffer();
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void createSyncObjects();
 
-    void createVertexBuffer(const std::vector<Vertex>& vertices);
+    void createVertexBuffer();
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     const std::vector<const char*> deviceExtensions = {
@@ -118,4 +129,3 @@ private:
         "VK_LAYER_KHRONOS_validation"
     };
 };
-

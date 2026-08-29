@@ -27,10 +27,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glfw
 )
 
-# Warnings — worth having on while the engine is young
-target_compile_options(${PROJECT_NAME} PRIVATE
-    -Wall -Wextra
-)
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
 
 # --- Shader compilation ---
 # Compiles every .vert/.frag in shaders/ to SPIR-V in build/shaders/ using glslc.
@@ -59,4 +56,3 @@ endforeach()
 
 add_custom_target(Shaders DEPENDS ${SPIRV_BINARIES})
 add_dependencies(${PROJECT_NAME} Shaders)
-
