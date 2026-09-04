@@ -16,6 +16,14 @@ public:
     void drawTriangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& color);
     void drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color);
 
+    // Draws a solid-colored circle as a fan of triangles around the center.
+    // segments controls smoothness — higher = rounder, more triangles.
+    void drawCircle(const Vect3& center, float radius, const Vect3& color, int segments = 32);
+
+    // Draws a solid-colored axis-aligned cube, centered at `center`,
+    // `size` units along each edge.
+    void drawCube(const Vect3& center, float size, const Vect3& color);
+
     const std::vector<Vertex>& getVertices() const { return vertices; }
 
 private:

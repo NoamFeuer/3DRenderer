@@ -6,6 +6,7 @@
 
 #include "../core/Window.hpp"
 #include "Vertex.hpp"
+#include "../math/Mat4.hpp"
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -43,6 +44,10 @@ public:
     // Renderer accumulated that frame.
     void updateVertexBuffer(const std::vector<Vertex>& vertices);
 
+    // Sets the matrix pushed to the vertex shader each draw. Call once per
+    // frame, before drawFrame(), with (projection * view) for the frame's camera.
+    void setViewProjection(const Mat4& viewProjection);
+
     void drawFrame(Window& window);
     void waitIdle();
 
@@ -63,8 +68,18 @@ private:
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
+    // Depth buffer — one image, shared across all swapchain framebuffers.
+    // Sized to match the swapchain, so it's torn down/recreated alongside it.
+    VkImage depthImage = VK_NULL_HANDLE;
+    VkDeviceMemory depthImageMemory = VK_NULL_HANDLE;
+    VkImageView depthImageView = VK_NULL_HANDLE;
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+
+    // Matrix pushed to the vertex shader each frame via setViewProjection().
+    Mat4 viewProjectionMatrix;
 
     // Vertex buffer is allocated once, with fixed capacity, and persistently
     // mapped — every frame we just memcpy new data into it rather than
@@ -101,6 +116,13 @@ private:
     VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, Window& window);
     void createSwapChain(Window& window);
     void createImageViews();
+    void cleanupSwapChain();
+    void recreateSwapChain(Window& window);
+
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates,
+                                  VkImageTiling tiling, VkFormatFeatureFlags features);
+    VkFormat findDepthFormat();
+    void createDepthResources();
 
     void createRenderPass();
     void createGraphicsPipeline();
