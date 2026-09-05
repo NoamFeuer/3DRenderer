@@ -7,6 +7,10 @@ Mat4::Mat4() {
 			m[i][j] = (i == j) ? 1.0f : 0.0f;
 }
 
+Mat4 Mat4::identity() {
+	return Mat4();
+}
+
 Mat4 Mat4::operator*(const Mat4& other) const {
 	Mat4 result;
 
@@ -25,7 +29,6 @@ Vect3 Mat4::operator*(const Vect3& v) const {
 	float z = m[2][0]*v.x + m[2][1]*v.y + m[2][2]*v.z + m[2][3];
 	float w = m[3][0]*v.x + m[3][1]*v.y + m[3][2]*v.z + m[3][3];
 
-	// Divide by w for perspective correct projection
 	if (w != 0) return Vect3(x/w, y/w, z/w);
 	return Vect3(x, y, z);
 }
