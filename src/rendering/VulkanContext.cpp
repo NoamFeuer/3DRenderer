@@ -25,6 +25,7 @@ void VulkanContext::init(Window& window) {
     createFramebuffers();
     createCommandPool();
     createVertexBuffer();
+    createIndexBuffer();
     createCommandBuffer();
     createSyncObjects();
 }
@@ -53,6 +54,19 @@ void VulkanContext::cleanup() {
     if (vertexBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, vertexBufferMemory, nullptr);
         vertexBufferMemory = VK_NULL_HANDLE;
+    }
+
+    if (indexBufferMapped != nullptr) {
+        vkUnmapMemory(device, indexBufferMemory);
+        indexBufferMapped = nullptr;
+    }
+    if (indexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, indexBuffer, nullptr);
+        indexBuffer = VK_NULL_HANDLE;
+    }
+    if (indexBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, indexBufferMemory, nullptr);
+        indexBufferMemory = VK_NULL_HANDLE;
     }
 
     cleanupSwapChain();
@@ -846,6 +860,39 @@ void VulkanContext::createVertexBuffer() {
     std::cout << "Vertex buffer created (capacity: " << MAX_VERTICES << " vertices)\n";
 }
 
+void VulkanContext::createIndexBuffer() {
+    VkDeviceSize bufferSize = sizeof(uint32_t) * MAX_INDICES;
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &indexBuffer) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create index buffer!");
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(device, indexBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(
+        memRequirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &indexBufferMemory) != VK_SUCCESS)
+        throw std::runtime_error("Failed to allocate index buffer memory!");
+
+    vkBindBufferMemory(device, indexBuffer, indexBufferMemory, 0);
+
+    vkMapMemory(device, indexBufferMemory, 0, bufferSize, 0, &indexBufferMapped);
+
+    std::cout << "Index buffer created (capacity: " << MAX_INDICES << " indices)\n";
+}
+
 void VulkanContext::updateVertexBuffer(const std::vector<Vertex>& vertices) {
     if (vertices.size() > MAX_VERTICES)
         throw std::runtime_error("Too many vertices for vertex buffer capacity! Increase MAX_VERTICES.");
@@ -853,6 +900,15 @@ void VulkanContext::updateVertexBuffer(const std::vector<Vertex>& vertices) {
     vertexCount = static_cast<uint32_t>(vertices.size());
     if (vertexCount > 0)
         memcpy(vertexBufferMapped, vertices.data(), sizeof(Vertex) * vertexCount);
+}
+
+void VulkanContext::updateIndexBuffer(const std::vector<uint32_t>& indices) {
+    if (indices.size() > MAX_INDICES)
+        throw std::runtime_error("Too many indices for index buffer capacity! Increase MAX_INDICES.");
+
+    indexCount = static_cast<uint32_t>(indices.size());
+    if (indexCount > 0)
+        memcpy(indexBufferMapped, indices.data(), sizeof(uint32_t) * indexCount);
 }
 
 void VulkanContext::setViewProjection(const Mat4& viewProjection) {
@@ -912,11 +968,12 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
 
-    if (vertexCount > 0) {
+    if (indexCount > 0) {
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
-        vkCmdDraw(cmdBuffer, vertexCount, 1, 0, 0);
+        vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmdBuffer, indexCount, 1, 0, 0, 0);
     }
 
     vkCmdEndRenderPass(cmdBuffer);

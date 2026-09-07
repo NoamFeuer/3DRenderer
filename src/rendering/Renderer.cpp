@@ -3,12 +3,28 @@
 
 void Renderer::beginFrame() {
     vertices.clear();
+    indices.clear();
+}
+
+uint32_t Renderer::pushUniqueVertex(const Vertex& vertex) {
+    for (size_t i = 0; i < vertices.size(); i++) {
+        if (vertices[i].position.x == vertex.position.x &&
+            vertices[i].position.y == vertex.position.y &&
+            vertices[i].position.z == vertex.position.z &&
+            vertices[i].color.x == vertex.color.x &&
+            vertices[i].color.y == vertex.color.y &&
+            vertices[i].color.z == vertex.color.z) {
+            return static_cast<uint32_t>(i);
+        }
+    }
+    vertices.push_back(vertex);
+    return static_cast<uint32_t>(vertices.size() - 1);
 }
 
 void Renderer::drawTriangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& color) {
-    vertices.push_back({ p1, color });
-    vertices.push_back({ p2, color });
-    vertices.push_back({ p3, color });
+    indices.push_back(pushUniqueVertex({ p1, color }));
+    indices.push_back(pushUniqueVertex({ p2, color }));
+    indices.push_back(pushUniqueVertex({ p3, color }));
 }
 
 void Renderer::drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color) {
@@ -66,5 +82,5 @@ void Renderer::drawCube(const Vect3& center, const Vect3& color, const Mat4& rot
     drawRectangle(p4, p0, p3, p7, color);
     drawRectangle(p1, p5, p6, p2, color);
     drawRectangle(p3, p2, p6, p7, color);
-    drawRectangle(p4, p5, p1, p0, color); 
+    drawRectangle(p4, p5, p1, p0, color);
 }

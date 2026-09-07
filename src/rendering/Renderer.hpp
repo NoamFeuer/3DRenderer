@@ -18,7 +18,11 @@ public:
               const Mat4& rotation = Mat4::identity(),
               const Vect3& scale = Vect3(1.0f, 1.0f, 1.0f));
     const std::vector<Vertex>& getVertices() const { return vertices; }
+    const std::vector<uint32_t>& getIndices() const { return indices; }
 
 private:
+    uint32_t pushUniqueVertex(const Vertex& vertex);
+
     std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
 };

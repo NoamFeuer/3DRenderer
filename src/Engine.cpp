@@ -45,6 +45,7 @@ void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, C
         vulkanContext->setViewProjection(viewProjection);
 
         vulkanContext->updateVertexBuffer(renderer->getVertices());
+        vulkanContext->updateIndexBuffer(renderer->getIndices());
         vulkanContext->drawFrame(*window);
     }
 }

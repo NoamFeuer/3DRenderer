@@ -44,6 +44,11 @@ public:
     // Renderer accumulated that frame.
     void updateVertexBuffer(const std::vector<Vertex>& vertices);
 
+    // Copies the given indices into the GPU-visible index buffer.
+    // Call this once per frame, before drawFrame(), with whatever the
+    // Renderer accumulated that frame.
+    void updateIndexBuffer(const std::vector<uint32_t>& indices);
+
     // Sets the matrix pushed to the vertex shader each draw. Call once per
     // frame, before drawFrame(), with (projection * view) for the frame's camera.
     void setViewProjection(const Mat4& viewProjection);
@@ -90,6 +95,12 @@ private:
     void* vertexBufferMapped = nullptr;
     uint32_t vertexCount = 0;
 
+    static constexpr uint32_t MAX_INDICES = 100000;
+    VkBuffer indexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
+    void* indexBufferMapped = nullptr;
+    uint32_t indexCount = 0;
+
     VkCommandPool commandPool = VK_NULL_HANDLE;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 
@@ -135,6 +146,7 @@ private:
     void createSyncObjects();
 
     void createVertexBuffer();
+    void createIndexBuffer();
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     const std::vector<const char*> deviceExtensions = {
