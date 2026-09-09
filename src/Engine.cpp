@@ -30,15 +30,13 @@ void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, C
 
         int width = window->getWidth();
         int height = window->getHeight();
-        if (width == 0 || height == 0) {
-            continue; // minimized — nothing to render, avoid divide-by-zero aspect ratio
-        }
+        if (width == 0 || height == 0)
+            continue;
 
         renderer->beginFrame();
 
-        if (updateCallback) {
+        if (updateCallback)
             updateCallback(deltaTime, *renderer, *camera, *input);
-        }
 
         float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         Mat4 viewProjection = camera->getProjectionMatrix(aspectRatio) * camera->getViewMatrix();

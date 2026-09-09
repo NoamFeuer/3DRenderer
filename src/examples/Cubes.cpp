@@ -1,9 +1,9 @@
 #include <iostream>
-#include "Engine.hpp"
-#include "math/Vect3.hpp"
-#include "math/Mat4.hpp"
+#include "../Engine.hpp"
+#include "../math/Vect3.hpp"
+#include "../math/Mat4.hpp"
 
-int main() {
+int run() {
     try {
         Engine engine(800, 600, "My Engine");
 

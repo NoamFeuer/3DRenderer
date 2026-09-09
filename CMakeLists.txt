@@ -8,13 +8,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 REQUIRED)
 
-# Collect source files (adjust paths to match your actual layout)
 file(GLOB_RECURSE ENGINE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/*.cpp"
 )
 
 add_executable(${PROJECT_NAME}
-    src/main.cpp
     ${ENGINE_SOURCES}
 )
 
@@ -29,8 +27,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 
 target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
 
-# --- Shader compilation ---
-# Compiles every .vert/.frag in shaders/ to SPIR-V in build/shaders/ using glslc.
 find_program(GLSLC glslc REQUIRED)
 
 file(GLOB SHADER_SOURCES
