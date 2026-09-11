@@ -28,6 +28,26 @@ public:
     void init(Window& window);
     void cleanup();
 
+    // Registers a texture image view in the bindless descriptor set and
+    // returns the index to attach to vertices. The image view must stay
+    // alive (and valid) for the lifetime of the context.
+    uint32_t registerTexture(VkImageView imageView);
+
+    // Resource helpers shared with Texture and other resource classes.
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+    void createImage(
+        uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
+        VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+        VkImage& image, VkDeviceMemory& imageMemory);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectMask);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+    void createBuffer(
+        VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+        VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
     VkInstance getInstance() const { return instance; }
     VkPhysicalDevice getPhysicalDevice() const { return physicalDevice; }
     VkDevice getDevice() const { return device; }
@@ -82,6 +102,21 @@ private:
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+
+    // Bindless texture support — one combined-image-sampler array covering
+    // every registered texture, bound once per frame in recordCommandBuffer().
+    static constexpr uint32_t MAX_TEXTURES = 64;
+    VkDescriptorSetLayout textureDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet textureDescriptorSet = VK_NULL_HANDLE;
+    VkSampler textureSampler = VK_NULL_HANDLE;
+    std::vector<VkImageView> textureImageViews;
+
+    void createTextureSampler();
+    void createTextureDescriptorSetLayout();
+    void createDescriptorPool();
+    void allocateTextureDescriptorSet();
+    void updateTextureDescriptors();
 
     // Matrix pushed to the vertex shader each frame via setViewProjection().
     Mat4 viewProjectionMatrix;
@@ -147,7 +182,6 @@ private:
 
     void createVertexBuffer();
     void createIndexBuffer();
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME

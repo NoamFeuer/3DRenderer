@@ -13,8 +13,16 @@ Engine::Engine(int width, int height, const std::string& title) {
 Engine::~Engine() {
     if (vulkanContext) {
         vulkanContext->waitIdle();
+        textures.clear();
         vulkanContext->cleanup();
     }
+}
+
+int Engine::loadTexture(const std::string& path) {
+    Texture texture = Texture::load(path, *vulkanContext);
+    uint32_t index = vulkanContext->registerTexture(texture.getImageView());
+    textures.push_back(std::move(texture));
+    return static_cast<int>(index);
 }
 
 void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, Camera& camera, Input& input)>& updateCallback) {

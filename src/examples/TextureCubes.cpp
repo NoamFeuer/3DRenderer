@@ -3,14 +3,17 @@
 #include "../math/Vect3.hpp"
 #include "../math/Mat4.hpp"
 
-// Demonstrates the basic build API: solid-color cubes with transforms
-// (rotation and scale) via Renderer::drawCube().
+// Demonstrates the bindless texture API: Engine::loadTexture() returns an
+// index that Renderer::drawTexturedCube() attaches to each face.
 int main() {
     try {
-        Engine engine(800, 600, "Colored Cubes");
+        Engine engine(800, 600, "Textured Cubes");
 
         const float moveSpeed = 3.0f;
         const float mouseSensitivity = 0.0025f;
+
+        int checkerTex = engine.loadTexture("assets/checker.png");
+        int gradientTex = engine.loadTexture("assets/gradient.png");
 
         engine.run([&](float deltaTime, Renderer& renderer, Camera& camera, Input& input) {
             camera.yaw -= input.getMouseDeltaX() * mouseSensitivity;
@@ -30,12 +33,11 @@ int main() {
             if (input.isKeyDown(Key::Space)) camera.position.y -= moveSpeed * deltaTime;
             if (input.isKeyDown(Key::LeftShift)) camera.position.y += moveSpeed * deltaTime;
 
-            renderer.drawCube(Vect3(0.0f, 0.0f, -3.0f), Vect3(0.8f, 0.3f, 0.2f));
-            renderer.drawCube(Vect3(3.0f, 0.0f, -3.0f), Vect3(0.2f, 0.8f, 0.3f), Mat4::identity(), Vect3(2.0f, 2.0f, 2.0f));
-            renderer.drawCube(Vect3(-3.0f, 0.0f, -3.0f), Vect3(0.5f, 0.5f, 0.9f), Mat4::identity(), Vect3(2.0f, 0.2f, 2.0f));
-            renderer.drawCube(Vect3(0.0f, 2.0f, -3.0f), Vect3(0.9f, 0.7f, 0.1f), Mat4::rotationY(0.785f));
-            renderer.drawCube(Vect3(0.0f, -2.0f, -3.0f), Vect3(0.6f, 0.2f, 0.8f), Mat4::rotationZ(0.4f), Vect3(0.5f, 2.0f, 0.5f));
-            renderer.drawCube(Vect3(4.0f, 0.0f, -6.0f), Vect3(1.0f, 0.5f, 0.0f), Mat4::rotationY(0.6f) * Mat4::rotationX(0.3f), Vect3(1.5f, 1.5f, 1.5f));
+            renderer.drawCube(Vect3(0.0f, 0.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), Mat4::identity(), Vect3(2.0f, 2.0f, 2.0f));
+            renderer.drawTexturedCube(Vect3(4.0f, 0.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), checkerTex, Mat4::rotationY(0.785f), Vect3(1.5f, 1.5f, 1.5f));
+            renderer.drawTexturedCube(Vect3(-4.0f, 0.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), gradientTex, Mat4::rotationY(-0.785f), Vect3(1.5f, 1.5f, 1.5f));
+            renderer.drawTexturedCube(Vect3(0.0f, 3.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), checkerTex, Mat4::rotationX(0.5f) * Mat4::rotationZ(0.5f), Vect3(2.0f, 0.5f, 2.0f));
+            renderer.drawTexturedCube(Vect3(0.0f, -3.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), gradientTex, Mat4::rotationX(-0.5f), Vect3(2.0f, 0.5f, 2.0f));
         });
     }
     catch (const std::exception& e) {
