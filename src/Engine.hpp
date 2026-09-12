@@ -43,6 +43,10 @@ public:
         const std::function<void(float deltaTime, Renderer& renderer, Camera& camera, Input& input)>& fixedUpdate,
         const std::function<void(float alpha, Renderer& renderer, Camera& camera, Input& input)>& renderCallback = nullptr);
 
+    // Current window size in pixels (for laying out screen-space text/HUD).
+    int getWindowWidth() const { return window ? window->getWidth() : 0; }
+    int getWindowHeight() const { return window ? window->getHeight() : 0; }
+
     // Loads a texture from disk into GPU memory and registers it with the
     // renderer. Returns the bindless index to pass to draw calls (e.g.
     // Renderer::drawTexturedCube). The texture stays alive until the Engine

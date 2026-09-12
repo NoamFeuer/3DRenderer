@@ -10,16 +10,29 @@ void Renderer::beginFrame() {
     modelMatrices.clear();
     blendedIndexStart = 0;
     inBlendedBatch = false;
+    screenIndexStart = 0;
+    inScreenBatch = false;
 }
 
 uint32_t Renderer::getBlendedIndexOffset() const {
     return inBlendedBatch ? blendedIndexStart : std::numeric_limits<uint32_t>::max();
 }
 
+uint32_t Renderer::getScreenIndexOffset() const {
+    return inScreenBatch ? screenIndexStart : std::numeric_limits<uint32_t>::max();
+}
+
 void Renderer::beginBlended() {
     if (!inBlendedBatch) {
         inBlendedBatch = true;
         blendedIndexStart = static_cast<uint32_t>(indices.size());
+    }
+}
+
+void Renderer::beginScreenText() {
+    if (!inScreenBatch) {
+        inScreenBatch = true;
+        screenIndexStart = static_cast<uint32_t>(indices.size());
     }
 }
 
@@ -142,8 +155,20 @@ void Renderer::drawText(const Font& font, const std::string& text, const Vect3& 
         return;
 
     beginBlended();
+    emitText(font, text, position, size / static_cast<float>(font.getPixelHeight()), color);
+}
 
-    const float scale = size / static_cast<float>(font.getPixelHeight());
+void Renderer::drawTextScreen(const Font& font, const std::string& text, float x, float y,
+                              float sizePx, const Vect3& color) {
+    if (text.empty())
+        return;
+
+    beginScreenText();
+    emitText(font, text, Vect3(x, y, HUD_Z), sizePx / static_cast<float>(font.getPixelHeight()), color);
+}
+
+void Renderer::emitText(const Font& font, const std::string& text, const Vect3& position,
+                        float scale, const Vect3& color) {
     const int textureIndex = font.getTextureIndex();
     const float baselineY = position.y + font.getAscent() * scale;
     float penX = 0.0f;

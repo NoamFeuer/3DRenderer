@@ -79,6 +79,7 @@ public:
     // pipeline) from blended (sprites/text, drawn with the blended pipeline)
     // content. Pass Renderer::getBlendedIndexOffset() each frame.
     void setBlendedIndexOffset(uint32_t offset) { blendedIndexOffset = offset; }
+    void setScreenIndexOffset(uint32_t offset) { screenIndexOffset = offset; }
 
     // Sets the matrix pushed to the vertex shader each draw. Call once per
     // frame, before drawFrame(), with (projection * view) for the frame's camera.
@@ -121,6 +122,10 @@ private:
     // Content before it is drawn with `graphicsPipeline`, from it onwards with
     // `blendedPipeline`. UINT32_MAX means the whole frame is opaque.
     uint32_t blendedIndexOffset = std::numeric_limits<uint32_t>::max();
+
+    // Index offset where screen-space (HUD) blended content begins.
+    // UINT32_MAX means no screen-space content this frame.
+    uint32_t screenIndexOffset = std::numeric_limits<uint32_t>::max();
 
     // Bindless texture support — one combined-image-sampler array covering
     // every registered texture, bound once per frame in recordCommandBuffer().

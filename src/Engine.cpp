@@ -62,6 +62,7 @@ void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, C
         vulkanContext->updateIndexBuffer(renderer->getIndices());
         vulkanContext->updateModelMatrixBuffer(renderer->getModelMatrices());
         vulkanContext->setBlendedIndexOffset(renderer->getBlendedIndexOffset());
+        vulkanContext->setScreenIndexOffset(renderer->getScreenIndexOffset());
         vulkanContext->drawFrame(*window);
     }
 }
@@ -114,6 +115,7 @@ void Engine::runFixed(
         vulkanContext->updateIndexBuffer(renderer->getIndices());
         vulkanContext->updateModelMatrixBuffer(renderer->getModelMatrices());
         vulkanContext->setBlendedIndexOffset(renderer->getBlendedIndexOffset());
+        vulkanContext->setScreenIndexOffset(renderer->getScreenIndexOffset());
         vulkanContext->drawFrame(*window);
     }
 }

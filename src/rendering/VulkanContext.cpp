@@ -1220,16 +1220,32 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
         vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        uint32_t blendStart = (blendedIndexOffset <= indexCount) ? blendedIndexOffset : indexCount;
+        const uint32_t worldBlendEnd = (blendedIndexOffset <= indexCount) ? blendedIndexOffset : indexCount;
+        const uint32_t screenStart  = (screenIndexOffset <= indexCount) ? screenIndexOffset : indexCount;
+        const uint32_t firstBlended = (worldBlendEnd < screenStart) ? worldBlendEnd : screenStart;
 
-        if (blendStart > 0) {
+        if (firstBlended > 0) {
             vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-            vkCmdDrawIndexed(cmdBuffer, blendStart, 1, 0, 0, 0);
+            vkCmdDrawIndexed(cmdBuffer, firstBlended, 1, 0, 0, 0);
         }
 
-        if (indexCount > blendStart) {
+        if (screenStart > firstBlended) {
             vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blendedPipeline);
-            vkCmdDrawIndexed(cmdBuffer, indexCount - blendStart, 1, blendStart, 0, 0);
+            vkCmdDrawIndexed(cmdBuffer, screenStart - firstBlended, 1, firstBlended, 0, 0);
+        }
+
+        if (indexCount > screenStart) {
+            Mat4 screenProjection = Mat4::ortho(
+                0.0f,
+                static_cast<float>(swapChainExtent.width),
+                0.0f,
+                static_cast<float>(swapChainExtent.height),
+                0.1f,
+                2.0f);
+            vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                               0, sizeof(Mat4), &screenProjection);
+            vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blendedPipeline);
+            vkCmdDrawIndexed(cmdBuffer, indexCount - screenStart, 1, screenStart, 0, 0);
         }
     }
 
