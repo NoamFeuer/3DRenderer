@@ -59,6 +59,17 @@ public:
                         float sizePx,
                         const Vect3& color = Vect3(1.0f, 1.0f, 1.0f));
 
+    // Draws a solid-color quad in screen space (HUD panel). `(x, y)` is the
+    // top-left in pixels, `width`/`height` its size. Drawn in the same screen
+    // pass as drawTextScreen, so it stays fixed regardless of the camera.
+    // Draw panels before any text you want on top of them.
+    void drawPanelScreen(float x, float y, float width, float height, const Vect3& color);
+
+    // Textured HUD panel using a texture index from Engine::loadTexture();
+    // `color` tints it (white = as-is). Pass -1 for a solid-color panel.
+    void drawPanelScreen(float x, float y, float width, float height, int textureIndex,
+                         const Vect3& color = Vect3(1.0f, 1.0f, 1.0f));
+
     const std::vector<Vertex>& getVertices() const { return vertices; }
     const std::vector<uint32_t>& getIndices() const { return indices; }
     const std::vector<Mat4>& getModelMatrices() const { return modelMatrices; }

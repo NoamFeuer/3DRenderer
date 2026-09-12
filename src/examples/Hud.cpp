@@ -4,15 +4,17 @@
 #include "../math/Vect3.hpp"
 #include "../math/Mat4.hpp"
 
-// Screen-space text: HUD overlays drawn with Renderer::drawTextScreen(). The
-// world scene (rotating cubes with world labels) stays in the background while
-// the FPS counter, title and hint stay fixed on screen regardless of the
-// camera. Cursor: Esc to release, left-click to re-capture; WASD + mouse to fly.
+// Screen-space overlays: HUD panels and text drawn with Renderer::drawPanelScreen()
+// and drawTextScreen(). The world scene (rotating cubes with a world label) stays
+// in the background while the stats panel, health bar and checker panel stay fixed
+// on screen regardless of the camera.
+// Cursor: Esc to release, left-click to re-capture; WASD + mouse to fly.
 int main() {
     try {
         Engine engine(800, 600, "HUD");
 
         Font* font = engine.loadFont("assets/font.ttf", 64);
+        int checkerTex = engine.loadTexture("assets/checker.png");
 
         const float moveSpeed = 3.0f;
         const float mouseSensitivity = 0.0025f;
@@ -48,13 +50,26 @@ int main() {
             renderer.drawText(*font, "world", Vect3(0.8f, 1.6f, -3.0f), 0.5f, Vect3(1.0f, 0.8f, 0.7f));
 
             // ---- Screen-space HUD (pixel coords, top-left origin). ----
-            int height = engine.getWindowHeight();
+            float width = static_cast<float>(engine.getWindowWidth());
+            float height = static_cast<float>(engine.getWindowHeight());
 
+            // Panel behind the stats text (drawn first so text sits on top).
+            renderer.drawPanelScreen(8.0f, 8.0f, 260.0f, 88.0f, Vect3(0.06f, 0.08f, 0.12f));
             std::string frameRate = "FPS " + std::to_string(static_cast<int>(1.0f / (deltaTime > 0.0f ? deltaTime : 1.0f)));
             renderer.drawTextScreen(*font, frameRate, 16.0f, 16.0f, 28.0f, Vect3(0.2f, 1.0f, 0.4f));
-
             renderer.drawTextScreen(*font, "3D Renderer", 16.0f, 48.0f, 24.0f, Vect3(1.0f, 1.0f, 1.0f));
+            renderer.drawTextScreen(*font, "HUD panels demo", 16.0f, 76.0f, 16.0f, Vect3(0.6f, 0.65f, 0.7f));
 
+            // Textured checker panel top-right.
+            renderer.drawPanelScreen(width - 68.0f, 8.0f, 60.0f, 45.0f, checkerTex);
+
+            // Pulsing "health bar" bottom-left: dark track then a green fill.
+            float health = 0.35f + 0.3f * (0.5f + 0.5f * std::sin(elapsed * 1.5f));
+            float barX = 16.0f;
+            float barY = height - 74.0f;
+            float barW = 180.0f;
+            renderer.drawPanelScreen(barX, barY, barW, 16.0f, Vect3(0.15f, 0.15f, 0.18f));
+            renderer.drawPanelScreen(barX, barY, barW * health, 16.0f, Vect3(0.25f, 0.9f, 0.4f));
             renderer.drawTextScreen(*font, "WASD + mouse to look around", 16.0f,
                                     static_cast<float>(height) - 44.0f, 20.0f, Vect3(0.7f, 0.7f, 0.7f));
         });

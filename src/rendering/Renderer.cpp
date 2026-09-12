@@ -167,6 +167,30 @@ void Renderer::drawTextScreen(const Font& font, const std::string& text, float x
     emitText(font, text, Vect3(x, y, HUD_Z), sizePx / static_cast<float>(font.getPixelHeight()), color);
 }
 
+void Renderer::drawPanelScreen(float x, float y, float width, float height, const Vect3& color) {
+    drawPanelScreen(x, y, width, height, -1, color);
+}
+
+void Renderer::drawPanelScreen(float x, float y, float width, float height, int textureIndex,
+                               const Vect3& color) {
+    beginScreenText();
+
+    float right = x + width;
+    float bottom = y + height;
+
+    Vertex v0{ Vect3(x, y, HUD_Z), color, 0.0f, 0.0f, textureIndex, -1 };
+    Vertex v1{ Vect3(right, y, HUD_Z), color, 1.0f, 0.0f, textureIndex, -1 };
+    Vertex v2{ Vect3(right, bottom, HUD_Z), color, 1.0f, 1.0f, textureIndex, -1 };
+    Vertex v3{ Vect3(x, bottom, HUD_Z), color, 0.0f, 1.0f, textureIndex, -1 };
+
+    indices.push_back(pushUniqueVertex(v0));
+    indices.push_back(pushUniqueVertex(v1));
+    indices.push_back(pushUniqueVertex(v2));
+    indices.push_back(pushUniqueVertex(v0));
+    indices.push_back(pushUniqueVertex(v2));
+    indices.push_back(pushUniqueVertex(v3));
+}
+
 void Renderer::emitText(const Font& font, const std::string& text, const Vect3& position,
                         float scale, const Vect3& color) {
     const int textureIndex = font.getTextureIndex();
