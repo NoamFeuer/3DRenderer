@@ -22,6 +22,7 @@ void VulkanContext::init(Window& window) {
     createRenderPass();
     createTextureSampler();
     createTextureDescriptorSetLayout();
+    createModelDescriptorSetLayout();
     createDescriptorPool();
     createGraphicsPipeline();
     createDepthResources();
@@ -31,6 +32,9 @@ void VulkanContext::init(Window& window) {
     updateTextureDescriptors();
     createVertexBuffer();
     createIndexBuffer();
+    createModelBuffer();
+    allocateModelDescriptorSet();
+    updateModelDescriptor();
     createCommandBuffer();
     createSyncObjects();
 }
@@ -74,6 +78,19 @@ void VulkanContext::cleanup() {
         indexBufferMemory = VK_NULL_HANDLE;
     }
 
+    if (modelBufferMapped != nullptr) {
+        vkUnmapMemory(device, modelBufferMemory);
+        modelBufferMapped = nullptr;
+    }
+    if (modelBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, modelBuffer, nullptr);
+        modelBuffer = VK_NULL_HANDLE;
+    }
+    if (modelBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, modelBufferMemory, nullptr);
+        modelBufferMemory = VK_NULL_HANDLE;
+    }
+
     cleanupSwapChain();
 
     if (textureSampler != VK_NULL_HANDLE) {
@@ -88,10 +105,18 @@ void VulkanContext::cleanup() {
         vkDestroyDescriptorSetLayout(device, textureDescriptorSetLayout, nullptr);
         textureDescriptorSetLayout = VK_NULL_HANDLE;
     }
+    if (modelDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, modelDescriptorSetLayout, nullptr);
+        modelDescriptorSetLayout = VK_NULL_HANDLE;
+    }
 
     if (graphicsPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(device, graphicsPipeline, nullptr);
         graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (blendedPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, blendedPipeline, nullptr);
+        blendedPipeline = VK_NULL_HANDLE;
     }
     if (pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -610,9 +635,66 @@ VkShaderModule VulkanContext::createShaderModule(const std::vector<char>& code) 
 }
 
 void VulkanContext::createGraphicsPipeline() {
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(Mat4);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    VkDescriptorSetLayout setLayouts[] = { textureDescriptorSetLayout, modelDescriptorSetLayout };
+    pipelineLayoutInfo.setLayoutCount = 2;
+    pipelineLayoutInfo.pSetLayouts = setLayouts;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create pipeline layout!");
+
+    VkPipelineColorBlendAttachmentState opaqueBlendAttachment{};
+    opaqueBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    opaqueBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState blendedBlendAttachment{};
+    blendedBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // Premultiplied alpha (ONE / ONE_MINUS_SRC_ALPHA) — the font atlas bakes
+    // white * alpha, so text/sprite edges composite without dark fringes.
+    blendedBlendAttachment.blendEnable = VK_TRUE;
+    blendedBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendedBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendedBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    blendedBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendedBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendedBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    graphicsPipeline = buildPipeline(opaqueBlendAttachment, VK_TRUE);
+    blendedPipeline = buildPipeline(blendedBlendAttachment, VK_FALSE);
+
+    std::cout << "Graphics pipeline created\n";
+}
+
+VkPipeline VulkanContext::buildPipeline(const VkPipelineColorBlendAttachmentState& colorBlendAttachment,
+                                        VkBool32 depthWriteEnable) {
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = depthWriteEnable;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkPipelineShaderStageCreateInfo shaderStages[2];
+
     auto vertShaderCode = readFile("shaders/triangle.vert.spv");
     auto fragShaderCode = readFile("shaders/triangle.frag.spv");
-
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
@@ -628,7 +710,8 @@ void VulkanContext::createGraphicsPipeline() {
     fragShaderStageInfo.module = fragShaderModule;
     fragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+    shaderStages[0] = vertShaderStageInfo;
+    shaderStages[1] = fragShaderStageInfo;
 
     auto bindingDescription = Vertex::getBindingDescription();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
@@ -665,9 +748,6 @@ void VulkanContext::createGraphicsPipeline() {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    // Culling disabled: the OpenGL-style projection used here reverses
-    // window-space winding, so back-face culling would hide the faces that
-    // actually face the camera. Depth testing alone resolves closed shapes.
     rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
@@ -676,40 +756,6 @@ void VulkanContext::createGraphicsPipeline() {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-
-    VkPipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
-
-    VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(Mat4);
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &textureDescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
-        throw std::runtime_error("Failed to create pipeline layout!");
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -727,13 +773,14 @@ void VulkanContext::createGraphicsPipeline() {
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS)
         throw std::runtime_error("Failed to create graphics pipeline!");
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 
-    std::cout << "Graphics pipeline created\n";
+    return pipeline;
 }
 
 VkFormat VulkanContext::findSupportedFormat(const std::vector<VkFormat>& candidates,
@@ -1037,6 +1084,58 @@ void VulkanContext::createIndexBuffer() {
     std::cout << "Index buffer created (capacity: " << MAX_INDICES << " indices)\n";
 }
 
+void VulkanContext::allocateModelDescriptorSet() {
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &modelDescriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(device, &allocInfo, &modelDescriptorSet) != VK_SUCCESS)
+        throw std::runtime_error("Failed to allocate model descriptor set!");
+}
+
+void VulkanContext::updateModelDescriptor() {
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = modelBuffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(Mat4) * MAX_MODELS;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = modelDescriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
+
+    vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+}
+
+void VulkanContext::createModelBuffer() {
+    VkDeviceSize bufferSize = sizeof(Mat4) * MAX_MODELS;
+
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        modelBuffer, modelBufferMemory);
+
+    vkMapMemory(device, modelBufferMemory, 0, bufferSize, 0, &modelBufferMapped);
+
+    std::cout << "Model matrix buffer created (capacity: " << MAX_MODELS << " matrices)\n";
+}
+
+void VulkanContext::updateModelMatrixBuffer(const std::vector<Mat4>& modelMatrices) {
+    if (modelMatrices.size() > MAX_MODELS)
+        throw std::runtime_error("Too many model matrices for the model buffer capacity! Increase MAX_MODELS.");
+
+    modelCount = static_cast<uint32_t>(modelMatrices.size());
+    if (modelCount > 0)
+        memcpy(modelBufferMapped, modelMatrices.data(), sizeof(Mat4) * modelCount);
+}
+
 void VulkanContext::updateVertexBuffer(const std::vector<Vertex>& vertices) {
     if (vertices.size() > MAX_VERTICES)
         throw std::runtime_error("Too many vertices for vertex buffer capacity! Increase MAX_VERTICES.");
@@ -1096,7 +1195,8 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
 
     vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-    vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &textureDescriptorSet, 0, nullptr);
+    VkDescriptorSet descriptorSets[] = { textureDescriptorSet, modelDescriptorSet };
+    vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, descriptorSets, 0, nullptr);
 
     vkCmdPushConstants(cmdBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(Mat4), &viewProjectionMatrix);
 
@@ -1119,7 +1219,18 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmdBuffer, indexCount, 1, 0, 0, 0);
+
+        uint32_t blendStart = (blendedIndexOffset <= indexCount) ? blendedIndexOffset : indexCount;
+
+        if (blendStart > 0) {
+            vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+            vkCmdDrawIndexed(cmdBuffer, blendStart, 1, 0, 0, 0);
+        }
+
+        if (indexCount > blendStart) {
+            vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, blendedPipeline);
+            vkCmdDrawIndexed(cmdBuffer, indexCount - blendStart, 1, blendStart, 0, 0);
+        }
     }
 
     vkCmdEndRenderPass(cmdBuffer);
@@ -1148,9 +1259,11 @@ void VulkanContext::createTextureSampler() {
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    // CLAMP so glyphs packed at the atlas borders don't sample across edges;
+    // existing sprites/cubes use 0..1 UVs so wrapping wasn't relied on.
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.anisotropyEnable = VK_FALSE;
     samplerInfo.maxAnisotropy = 1.0f;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -1185,18 +1298,36 @@ void VulkanContext::createTextureDescriptorSetLayout() {
 }
 
 void VulkanContext::createDescriptorPool() {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = MAX_TEXTURES;
+    VkDescriptorPoolSize poolSizes[2];
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = MAX_TEXTURES;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[1].descriptorCount = 1;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+    poolInfo.maxSets = 2;
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
         throw std::runtime_error("Failed to create descriptor pool!");
+}
+
+void VulkanContext::createModelDescriptorSetLayout() {
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &modelDescriptorSetLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create model descriptor set layout!");
 }
 
 void VulkanContext::allocateTextureDescriptorSet() {

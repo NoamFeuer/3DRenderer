@@ -103,11 +103,33 @@ Mat4 Mat4::projection(float fov, float aspect, float near, float far) {
 
 	float tanHalfFov = tan(fov / 2.0f);
 
+	// Vulkan NDC depth range is [0,1], so the near plane maps to 0 and the far
+	// plane to 1 (w = -eyeZ keeps the depth sign in line with the -Z viewing
+	// direction). Unlike the old OpenGL-style -1..1 mapping this keeps the near
+	// half of the frustum inside the clip volume.
 	m.m[0][0] = 1.0f / (aspect * tanHalfFov);
 	m.m[1][1] = 1.0f / tanHalfFov;
-	m.m[2][2] = -(far + near) / (far - near);
-	m.m[2][3] = -(2.0f * far * near) / (far - near);
+	m.m[2][2] = far / (near - far);
+	m.m[2][3] = (far * near) / (near - far);
 	m.m[3][2] = -1.0f;
+
+	return m;
+}
+
+Mat4 Mat4::ortho(float left, float right, float bottom, float top, float near, float far) {
+	Mat4 m;
+
+	for (int i = 0; i < 4; i++)
+		for (int j = 0; j < 4; j++)
+			m.m[i][j] = 0;
+
+	m.m[0][0] = 2.0f / (right - left);
+	m.m[1][1] = 2.0f / (top - bottom);
+	m.m[2][2] = 1.0f / (near - far);
+	m.m[0][3] = -(right + left) / (right - left);
+	m.m[1][3] = -(top + bottom) / (top - bottom);
+	m.m[2][3] = near / (near - far);
+	m.m[3][3] = 1.0f;
 
 	return m;
 }

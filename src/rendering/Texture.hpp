@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <cstdint>
 #include <string>
 
 class VulkanContext;
@@ -24,11 +25,17 @@ public:
 
     static Texture load(const std::string& path, VulkanContext& context);
 
+    // Creates a GPU texture from raw R8G8B8A8 pixels in memory (used e.g. for
+    // procedurally generated images like font atlases).
+    static Texture create(uint32_t width, uint32_t height, const uint8_t* rgbaPixels, VulkanContext& context);
+
     VkImageView getImageView() const { return imageView; }
     uint32_t getWidth() const { return width; }
     uint32_t getHeight() const { return height; }
 
 private:
+    static void uploadToGpu(VulkanContext& context, Texture& texture,
+                            uint32_t width, uint32_t height, const uint8_t* rgbaPixels);
     VulkanContext* context = nullptr;
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory imageMemory = VK_NULL_HANDLE;

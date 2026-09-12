@@ -70,5 +70,7 @@ function(add_example target_name source)
     )
 endfunction()
 
-add_example(GraphicsEngine "${CMAKE_SOURCE_DIR}/src/examples/Cubes.cpp")
+add_example(Cubes "${CMAKE_SOURCE_DIR}/src/examples/Cubes.cpp")
 add_example(TextureCubes "${CMAKE_SOURCE_DIR}/src/examples/TextureCubes.cpp")
+add_example(Sprites "${CMAKE_SOURCE_DIR}/src/examples/Sprites.cpp")
+add_example(Text "${CMAKE_SOURCE_DIR}/src/examples/Text.cpp")

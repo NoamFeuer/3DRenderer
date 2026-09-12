@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <optional>
+#include <limits>
 
 #include "../core/Window.hpp"
 #include "Vertex.hpp"
@@ -69,6 +70,16 @@ public:
     // Renderer accumulated that frame.
     void updateIndexBuffer(const std::vector<uint32_t>& indices);
 
+    // Copies the per-object model matrices (indexed by each vertex's
+    // modelIndex) into the GPU-visible storage buffer. Call once per frame,
+    // before drawFrame(), with whatever the Renderer accumulated that frame.
+    void updateModelMatrixBuffer(const std::vector<Mat4>& modelMatrices);
+
+    // Tells the context which index splits opaque (drawn with the opaque
+    // pipeline) from blended (sprites/text, drawn with the blended pipeline)
+    // content. Pass Renderer::getBlendedIndexOffset() each frame.
+    void setBlendedIndexOffset(uint32_t offset) { blendedIndexOffset = offset; }
+
     // Sets the matrix pushed to the vertex shader each draw. Call once per
     // frame, before drawFrame(), with (projection * view) for the frame's camera.
     void setViewProjection(const Mat4& viewProjection);
@@ -102,6 +113,14 @@ private:
 
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline = VK_NULL_HANDLE;
+    // Alpha-blended pipeline used for sprites/text (premultiplied alpha,
+    // depth-test on but not writing). Draws the second half of the index range.
+    VkPipeline blendedPipeline = VK_NULL_HANDLE;
+
+    // Index offset within the frame's index buffer where blended content begins.
+    // Content before it is drawn with `graphicsPipeline`, from it onwards with
+    // `blendedPipeline`. UINT32_MAX means the whole frame is opaque.
+    uint32_t blendedIndexOffset = std::numeric_limits<uint32_t>::max();
 
     // Bindless texture support — one combined-image-sampler array covering
     // every registered texture, bound once per frame in recordCommandBuffer().
@@ -112,11 +131,26 @@ private:
     VkSampler textureSampler = VK_NULL_HANDLE;
     std::vector<VkImageView> textureImageViews;
 
+    // Per-object model matrices in a storage buffer, indexed by each vertex's
+    // modelIndex attribute. Must match Renderer::MAX_MODELS.
+    static constexpr uint32_t MAX_MODELS = 4096;
+    VkDescriptorSetLayout modelDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSet modelDescriptorSet = VK_NULL_HANDLE;
+    VkBuffer modelBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory modelBufferMemory = VK_NULL_HANDLE;
+    void* modelBufferMapped = nullptr;
+    uint32_t modelCount = 0;
+
     void createTextureSampler();
     void createTextureDescriptorSetLayout();
     void createDescriptorPool();
     void allocateTextureDescriptorSet();
     void updateTextureDescriptors();
+
+    void createModelDescriptorSetLayout();
+    void allocateModelDescriptorSet();
+    void updateModelDescriptor();
+    void createModelBuffer();
 
     // Matrix pushed to the vertex shader each frame via setViewProjection().
     Mat4 viewProjectionMatrix;
@@ -172,6 +206,7 @@ private:
 
     void createRenderPass();
     void createGraphicsPipeline();
+    VkPipeline buildPipeline(const VkPipelineColorBlendAttachmentState& colorBlendAttachment, VkBool32 depthWriteEnable);
     VkShaderModule createShaderModule(const std::vector<char>& code);
     void createFramebuffers();
 

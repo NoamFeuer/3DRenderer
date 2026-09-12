@@ -13,6 +13,32 @@ void Input::update() {
     double x, y;
     glfwGetCursorPos(handle, &x, &y);
 
+    // Esc releases the cursor so the user can interact with the OS UI; left
+    // click re-captures it to look around again. On each transition the cursor
+    // position is forgotten so the look delta doesn't jump.
+    if (cursorCaptured) {
+        if (glfwGetKey(handle, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            cursorCaptured = false;
+            setCursorCaptured(false);
+            lastX = x;
+            lastY = y;
+        }
+    }
+    else if (glfwGetMouseButton(handle, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        cursorCaptured = true;
+        setCursorCaptured(true);
+        lastX = x;
+        lastY = y;
+    }
+
+    if (!cursorCaptured) {
+        // While the cursor is free, deliver no look deltas so game cameras
+        // don't rotate from the user moving the mouse around.
+        mouseDeltaX = 0.0f;
+        mouseDeltaY = 0.0f;
+        return;
+    }
+
     if (firstUpdate) {
         // Avoid a large jump on the very first frame, before lastX/lastY
         // have a meaningful previous value to compare against.

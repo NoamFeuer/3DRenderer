@@ -21,6 +21,7 @@ public:
     float getMouseDeltaY() const { return mouseDeltaY; }
 
     void setCursorCaptured(bool captured);
+    bool isCursorCaptured() const { return cursorCaptured; }
 
 private:
     GLFWwindow* handle;
@@ -29,6 +30,7 @@ private:
     float mouseDeltaX = 0.0f;
     float mouseDeltaY = 0.0f;
     bool firstUpdate = true;
+    bool cursorCaptured = true;
 
     static int toGlfwKey(Key key);
 };

@@ -62,7 +62,22 @@ Texture Texture::load(const std::string& path, VulkanContext& context) {
     if (!pixels)
         throw std::runtime_error("Failed to load texture image: " + path);
 
-    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4;
+    Texture texture;
+    uploadToGpu(context, texture, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), pixels);
+
+    stbi_image_free(pixels);
+    return texture;
+}
+
+Texture Texture::create(uint32_t width, uint32_t height, const uint8_t* rgbaPixels, VulkanContext& context) {
+    Texture texture;
+    uploadToGpu(context, texture, width, height, rgbaPixels);
+    return texture;
+}
+
+void Texture::uploadToGpu(VulkanContext& context, Texture& texture,
+                          uint32_t width, uint32_t height, const uint8_t* rgbaPixels) {
+    const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -74,15 +89,12 @@ Texture Texture::load(const std::string& path, VulkanContext& context) {
 
     void* data;
     vkMapMemory(context.getDevice(), stagingBufferMemory, 0, imageSize, 0, &data);
-    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    memcpy(data, rgbaPixels, static_cast<size_t>(imageSize));
     vkUnmapMemory(context.getDevice(), stagingBufferMemory);
 
-    stbi_image_free(pixels);
-
-    Texture texture;
     texture.context = &context;
-    texture.width = static_cast<uint32_t>(texWidth);
-    texture.height = static_cast<uint32_t>(texHeight);
+    texture.width = width;
+    texture.height = height;
 
     constexpr VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
     context.createImage(
@@ -104,6 +116,4 @@ Texture Texture::load(const std::string& path, VulkanContext& context) {
 
     vkDestroyBuffer(context.getDevice(), stagingBuffer, nullptr);
     vkFreeMemory(context.getDevice(), stagingBufferMemory, nullptr);
-
-    return texture;
 }
