@@ -58,6 +58,11 @@ public:
     // lifetime; pass it to Renderer::drawText().
     Font* loadFont(const std::string& path, int pixelHeight = 64);
 
+    // Sets the procedural sky gradient (top = zenith, bottom = horizon/foot
+    // of the screen) and whether it is drawn. Enabled by default.
+    void setSkyColor(const Vect3& top, const Vect3& bottom);
+    void setSkyEnabled(bool enabled);
+
 private:
     std::unique_ptr<Window> window;
     std::unique_ptr<VulkanContext> vulkanContext;

@@ -6,15 +6,13 @@
 #include "../math/Vect3.hpp"
 
 struct Vertex {
-    // Position is in the object's local space when modelIndex >= 0 (the GPU
-    // applies `modelMatrices[modelIndex]`), or in world space when
-    // modelIndex == -1 (identity transform).
     Vect3 position;
     Vect3 color;
     float u = 0.0f;
     float v = 0.0f;
     int textureIndex = -1;
     int modelIndex = -1;
+    Vect3 normal{ 0.0f, 0.0f, 0.0f };
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription bindingDescription{};
@@ -24,8 +22,8 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 5> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 5> attributeDescriptions{};
+    static std::array<VkVertexInputAttributeDescription, 6> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 6> attributeDescriptions{};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -51,6 +49,11 @@ struct Vertex {
         attributeDescriptions[4].location = 4;
         attributeDescriptions[4].format = VK_FORMAT_R32_SINT;
         attributeDescriptions[4].offset = offsetof(Vertex, modelIndex);
+
+        attributeDescriptions[5].binding = 0;
+        attributeDescriptions[5].location = 5;
+        attributeDescriptions[5].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attributeDescriptions[5].offset = offsetof(Vertex, normal);
 
         return attributeDescriptions;
     }

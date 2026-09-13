@@ -8,6 +8,8 @@
 #include "../core/Window.hpp"
 #include "Vertex.hpp"
 #include "../math/Mat4.hpp"
+#include "../math/Vect3.hpp"
+#include "GpuData.hpp"
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
@@ -40,7 +42,8 @@ public:
     void createImage(
         uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling,
         VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
-        VkImage& image, VkDeviceMemory& imageMemory);
+        VkImage& image, VkDeviceMemory& imageMemory,
+        VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectMask);
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
     void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
@@ -70,10 +73,10 @@ public:
     // Renderer accumulated that frame.
     void updateIndexBuffer(const std::vector<uint32_t>& indices);
 
-    // Copies the per-object model matrices (indexed by each vertex's
-    // modelIndex) into the GPU-visible storage buffer. Call once per frame,
-    // before drawFrame(), with whatever the Renderer accumulated that frame.
-    void updateModelMatrixBuffer(const std::vector<Mat4>& modelMatrices);
+    // Copies the per-object model data (indexed by each vertex's modelIndex)
+    // into the GPU-visible storage buffer. Call once per frame, before
+    // drawFrame(), with whatever the Renderer accumulated that frame.
+    void updateModelMatrixBuffer(const std::vector<ModelData>& modelData);
 
     // Tells the context which index splits opaque (drawn with the opaque
     // pipeline) from blended (sprites/text, drawn with the blended pipeline)
@@ -85,8 +88,31 @@ public:
     // frame, before drawFrame(), with (projection * view) for the frame's camera.
     void setViewProjection(const Mat4& viewProjection);
 
+    // Uploads the frame's lighting state (camera position, ambient, lights) to
+    // the lighting UBO. Call once per frame before drawFrame().
+    void setLighting(const Vect3& cameraPosition, const LightingState& state);
+
+    // Configures the procedural sky. Enabled by default; set the two gradient
+    // colors and the centre (usually the camera position) each frame.
+    void setSkyEnabled(bool enabled) { skyEnabled = enabled; }
+    void setSkyColor(const Vect3& top, const Vect3& bottom) {
+        skyTopColor = top;
+        skyBottomColor = bottom;
+    }
+    void setSkyCenter(const Vect3& center) { skyCenter = center; }
+
     void drawFrame(Window& window);
     void waitIdle();
+
+    // Debug hook: on every subsequent drawFrame, copies the rendered
+    // (post-resolve) swapchain image into a host-visible buffer so the frame
+    // can be inspected off-screen. Pixels are tightly packed W*H*4 bytes in
+    // swapchain-format channel order (RGBA or BGRA). Do not call alongside
+    // normal use beyond debugging.
+    void enableDebugReadback();
+    const unsigned char* debugReadbackPixels() const { return debugReadbackPixelsPtr; }
+    uint32_t debugReadbackWidth() const { return debugReadbackExtent.width; }
+    uint32_t debugReadbackHeight() const { return debugReadbackExtent.height; }
 
 private:
     VkInstance instance = VK_NULL_HANDLE;
@@ -105,6 +131,16 @@ private:
     VkRenderPass renderPass = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
+    // Multisample count for the color/depth attachments (1 = no MSAA).
+    VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // Multisampled color image that the scene is rendered into, then resolved
+    // to the (single-sample) swapchain image. One image shared across all
+    // swapchain framebuffers, sized with the swapchain.
+    VkImage colorImage = VK_NULL_HANDLE;
+    VkDeviceMemory colorImageMemory = VK_NULL_HANDLE;
+    VkImageView colorImageView = VK_NULL_HANDLE;
+
     // Depth buffer — one image, shared across all swapchain framebuffers.
     // Sized to match the swapchain, so it's torn down/recreated alongside it.
     VkImage depthImage = VK_NULL_HANDLE;
@@ -117,6 +153,8 @@ private:
     // Alpha-blended pipeline used for sprites/text (premultiplied alpha,
     // depth-test on but not writing). Draws the second half of the index range.
     VkPipeline blendedPipeline = VK_NULL_HANDLE;
+    // Sky pipeline: depth writes off, renders the gradient backdrop cube.
+    VkPipeline skyPipeline = VK_NULL_HANDLE;
 
     // Index offset within the frame's index buffer where blended content begins.
     // Content before it is drawn with `graphicsPipeline`, from it onwards with
@@ -146,6 +184,20 @@ private:
     void* modelBufferMapped = nullptr;
     uint32_t modelCount = 0;
 
+    // Per-frame lighting uniform buffer (set 2).
+    VkDescriptorSetLayout lightingDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSet lightingDescriptorSet = VK_NULL_HANDLE;
+    VkBuffer lightingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory lightingBufferMemory = VK_NULL_HANDLE;
+    void* lightingBufferMapped = nullptr;
+
+    // Procedural sky state. The sky cube is re-centred on `skyCenter` (the
+    // camera) every frame before upload.
+    bool skyEnabled = true;
+    Vect3 skyTopColor{ 0.18f, 0.26f, 0.45f };
+    Vect3 skyBottomColor{ 0.72f, 0.80f, 0.85f };
+    Vect3 skyCenter{ 0.0f, 0.0f, 0.0f };
+
     void createTextureSampler();
     void createTextureDescriptorSetLayout();
     void createDescriptorPool();
@@ -156,6 +208,11 @@ private:
     void allocateModelDescriptorSet();
     void updateModelDescriptor();
     void createModelBuffer();
+
+    void createLightingDescriptorSetLayout();
+    void allocateLightingDescriptorSet();
+    void updateLightingDescriptor();
+    void createLightingBuffer();
 
     // Matrix pushed to the vertex shader each frame via setViewProjection().
     Mat4 viewProjectionMatrix;
@@ -181,6 +238,15 @@ private:
     VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
     VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
     VkFence inFlightFence = VK_NULL_HANDLE;
+
+    // Debug frame readback (see enableDebugReadback).
+    bool debugReadbackEnabled = false;
+    VkExtent2D debugReadbackExtent{};
+    VkBuffer debugReadbackBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory debugReadbackMemory = VK_NULL_HANDLE;
+    void* debugReadbackMapped = nullptr;
+    const unsigned char* debugReadbackPixelsPtr = nullptr;
+    void createDebugReadbackBuffer();
 
     void createInstance();
     bool checkValidationLayerSupport();
@@ -208,12 +274,16 @@ private:
                                   VkImageTiling tiling, VkFormatFeatureFlags features);
     VkFormat findDepthFormat();
     void createDepthResources();
+    void createColorResources();
 
     void createRenderPass();
     void createGraphicsPipeline();
-    VkPipeline buildPipeline(const VkPipelineColorBlendAttachmentState& colorBlendAttachment, VkBool32 depthWriteEnable);
+    VkPipeline buildPipeline(const char* vertexShader, const char* fragmentShader,
+                             const VkPipelineColorBlendAttachmentState& colorBlendAttachment,
+                             VkBool32 depthWriteEnable);
     VkShaderModule createShaderModule(const std::vector<char>& code);
     void createFramebuffers();
+    VkSampleCountFlagBits chooseSampleCount();
 
     void createCommandPool();
     void createCommandBuffer();

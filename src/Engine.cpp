@@ -33,6 +33,14 @@ Font* Engine::loadFont(const std::string& path, int pixelHeight) {
     return raw;
 }
 
+void Engine::setSkyColor(const Vect3& top, const Vect3& bottom) {
+    vulkanContext->setSkyColor(top, bottom);
+}
+
+void Engine::setSkyEnabled(bool enabled) {
+    vulkanContext->setSkyEnabled(enabled);
+}
+
 void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, Camera& camera, Input& input)>& updateCallback) {
     float lastTime = static_cast<float>(glfwGetTime());
 
@@ -57,10 +65,12 @@ void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, C
         float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         Mat4 viewProjection = camera->getProjectionMatrix(aspectRatio) * camera->getViewMatrix();
         vulkanContext->setViewProjection(viewProjection);
+        vulkanContext->setLighting(camera->position, renderer->lighting);
+        vulkanContext->setSkyCenter(camera->position);
 
         vulkanContext->updateVertexBuffer(renderer->getVertices());
         vulkanContext->updateIndexBuffer(renderer->getIndices());
-        vulkanContext->updateModelMatrixBuffer(renderer->getModelMatrices());
+        vulkanContext->updateModelMatrixBuffer(renderer->getModelData());
         vulkanContext->setBlendedIndexOffset(renderer->getBlendedIndexOffset());
         vulkanContext->setScreenIndexOffset(renderer->getScreenIndexOffset());
         vulkanContext->drawFrame(*window);
@@ -110,10 +120,12 @@ void Engine::runFixed(
         float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         Mat4 viewProjection = camera->getProjectionMatrix(aspectRatio) * camera->getViewMatrix();
         vulkanContext->setViewProjection(viewProjection);
+        vulkanContext->setLighting(camera->position, renderer->lighting);
+        vulkanContext->setSkyCenter(camera->position);
 
         vulkanContext->updateVertexBuffer(renderer->getVertices());
         vulkanContext->updateIndexBuffer(renderer->getIndices());
-        vulkanContext->updateModelMatrixBuffer(renderer->getModelMatrices());
+        vulkanContext->updateModelMatrixBuffer(renderer->getModelData());
         vulkanContext->setBlendedIndexOffset(renderer->getBlendedIndexOffset());
         vulkanContext->setScreenIndexOffset(renderer->getScreenIndexOffset());
         vulkanContext->drawFrame(*window);
