@@ -3,6 +3,8 @@
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];
 
+layout(set = 3, binding = 0) uniform sampler2DShadow shadowMap;
+
 struct GpuLight {
     vec4 positionType;     // rgb position, a = type (see Light::Type)
     vec4 directionOuter;   // rgb direction, a = spot outer cos
@@ -10,11 +12,12 @@ struct GpuLight {
     vec4 attenuationInner; // rgb (constant, linear, quadratic), a = spot inner cos
 };
 
-layout(set = 2, binding = 0) uniform Lighting {
+layout(set = 2, binding = 0, row_major) uniform Lighting {
     vec4 cameraPosition;
     vec4 ambient;
-    vec4 counts;           // x = number of active lights
+    vec4 counts;           // x = number of active lights, y = shadow light index
     GpuLight lights[16];
+    mat4 shadowMatrix;
 } lighting;
 
 layout(location = 0) in vec3 fragColor;
@@ -82,6 +85,18 @@ void main() {
         float specPower = pow(NdotH, fragSpecShin.a);
         vec3 specular = fragSpecShin.rgb * L.colorIntensity.rgb * L.colorIntensity.a
                       * specPower * attenuation * spotFactor;
+
+        // Shadow-casting light: sample the directional shadow map. The compare
+        // sampler returns ~1.0 where this fragment is unoccluded by the light.
+        if (i == int(lighting.counts.y) && type == 1) {
+            vec4 shadowClip = lighting.shadowMatrix * vec4(fragWorld, 1.0);
+            vec3 projShadow = shadowClip.xyz / max(shadowClip.w, 1e-4);
+            vec2 shadowUV = projShadow.xy * 0.5 + 0.5;
+            // Small constant bias on top of the pipeline's slope-scaled bias.
+            float shadow = texture(shadowMap, vec3(shadowUV, projShadow.z - 0.004));
+            diffuse  *= shadow;
+            specular *= shadow;
+        }
 
         color += diffuse + specular;
     }

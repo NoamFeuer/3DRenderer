@@ -25,6 +25,7 @@ void VulkanContext::init(Window& window) {
     createTextureDescriptorSetLayout();
     createModelDescriptorSetLayout();
     createLightingDescriptorSetLayout();
+    createShadowDescriptorSetLayout();
     createDescriptorPool();
     createGraphicsPipeline();
     createColorResources();
@@ -41,6 +42,9 @@ void VulkanContext::init(Window& window) {
     createLightingBuffer();
     allocateLightingDescriptorSet();
     updateLightingDescriptor();
+    createShadowResources();
+    allocateShadowDescriptorSet();
+    updateShadowDescriptor();
     createCommandBuffer();
     createSyncObjects();
 }
@@ -108,6 +112,39 @@ void VulkanContext::cleanup() {
     if (lightingBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, lightingBufferMemory, nullptr);
         lightingBufferMemory = VK_NULL_HANDLE;
+    }
+
+    if (shadowFramebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device, shadowFramebuffer, nullptr);
+        shadowFramebuffer = VK_NULL_HANDLE;
+    }
+    if (shadowSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, shadowSampler, nullptr);
+        shadowSampler = VK_NULL_HANDLE;
+    }
+    if (shadowPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, shadowPipeline, nullptr);
+        shadowPipeline = VK_NULL_HANDLE;
+    }
+    if (shadowPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, shadowPipelineLayout, nullptr);
+        shadowPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (shadowRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device, shadowRenderPass, nullptr);
+        shadowRenderPass = VK_NULL_HANDLE;
+    }
+    if (shadowImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, shadowImageView, nullptr);
+        shadowImageView = VK_NULL_HANDLE;
+    }
+    if (shadowImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device, shadowImage, nullptr);
+        shadowImage = VK_NULL_HANDLE;
+    }
+    if (shadowImageMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, shadowImageMemory, nullptr);
+        shadowImageMemory = VK_NULL_HANDLE;
     }
 
     cleanupSwapChain();
@@ -762,8 +799,11 @@ void VulkanContext::createGraphicsPipeline() {
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    VkDescriptorSetLayout setLayouts[] = { textureDescriptorSetLayout, modelDescriptorSetLayout, lightingDescriptorSetLayout };
-    pipelineLayoutInfo.setLayoutCount = 3;
+    VkDescriptorSetLayout setLayouts[] = {
+        textureDescriptorSetLayout, modelDescriptorSetLayout,
+        lightingDescriptorSetLayout, shadowDescriptorSetLayout
+    };
+    pipelineLayoutInfo.setLayoutCount = 4;
     pipelineLayoutInfo.pSetLayouts = setLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
@@ -1001,6 +1041,219 @@ void VulkanContext::createFramebuffers() {
     }
 
     std::cout << "Framebuffers created\n";
+}
+
+// Depth-only render pass for the directional shadow map. Single attachment,
+// no color outputs — the pipeline is a stub vertex shader that only writes
+// depth from the light's point of view.
+void VulkanContext::createShadowRenderPass() {
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = depthFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 0;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 0;
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependency.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &depthAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
+    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowRenderPass) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create shadow render pass!");
+}
+
+// Depth-only shader pipeline. The vertex shader (shadow.vert) transforms by
+// model then by the light's view-projection pushed as the frame matrix; there
+// is no fragment stage, so the renderer only produces depth values.
+void VulkanContext::createShadowPipeline() {
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(Mat4);
+
+    VkDescriptorSetLayout setLayouts[] = {
+        textureDescriptorSetLayout, modelDescriptorSetLayout,
+        lightingDescriptorSetLayout, shadowDescriptorSetLayout
+    };
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 4;
+    pipelineLayoutInfo.pSetLayouts = setLayouts;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &shadowPipelineLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create shadow pipeline layout!");
+
+    auto vertShaderCode = readFile("shaders/shadow.vert.spv");
+    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    auto bindingDescription = Vertex::getBindingDescription();
+    auto attributeDescriptions = Vertex::getAttributeDescriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    // Slope-scaled bias fights shadow acne on slanted surfaces: push depth a
+    // little further from the light so self-shadowing artifacts disappear.
+    rasterizer.depthBiasEnable = VK_TRUE;
+    rasterizer.depthBiasConstantFactor = 2.0f;
+    rasterizer.depthBiasSlopeFactor = 4.0f;
+    rasterizer.depthBiasClamp = 0.0f;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 1;
+    pipelineInfo.pStages = &vertShaderStageInfo;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = shadowPipelineLayout;
+    pipelineInfo.renderPass = shadowRenderPass;
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowPipeline) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create shadow pipeline!");
+
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+
+    std::cout << "Shadow resources created (" << SHADOW_MAP_SIZE << "x" << SHADOW_MAP_SIZE << ")\n";
+}
+
+// Comparison sampler used to read the shadow depth map with hardware PCF
+// (percentage-closer filtering): the depth comparison is done per-sample which
+// gives soft shadow edges without manual blurring.
+void VulkanContext::createShadowSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+    // Anything outside the shadow frustum samples a depth of 1.0 (fully lit),
+    // so objects can't cast shadows beyond the light's ortho box.
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_TRUE;
+    samplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 1.0f;
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &shadowSampler) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create shadow sampler!");
+}
+
+void VulkanContext::createShadowResources() {
+    createImage(
+        SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, depthFormat,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowImage, shadowImageMemory);
+
+    shadowImageView = createImageView(shadowImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    createShadowRenderPass();
+    createShadowPipeline();
+    createShadowSampler();
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = shadowRenderPass;
+    framebufferInfo.attachmentCount = 1;
+    framebufferInfo.pAttachments = &shadowImageView;
+    framebufferInfo.width = SHADOW_MAP_SIZE;
+    framebufferInfo.height = SHADOW_MAP_SIZE;
+    framebufferInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &shadowFramebuffer) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create shadow framebuffer!");
 }
 
 void VulkanContext::createCommandPool() {
@@ -1333,6 +1586,51 @@ void VulkanContext::createLightingDescriptorSetLayout() {
         throw std::runtime_error("Failed to create lighting descriptor set layout!");
 }
 
+void VulkanContext::createShadowDescriptorSetLayout() {
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &shadowDescriptorSetLayout) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create shadow descriptor set layout!");
+}
+
+void VulkanContext::allocateShadowDescriptorSet() {
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &shadowDescriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(device, &allocInfo, &shadowDescriptorSet) != VK_SUCCESS)
+        throw std::runtime_error("Failed to allocate shadow descriptor set!");
+}
+
+void VulkanContext::updateShadowDescriptor() {
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = shadowImageView;
+    imageInfo.sampler = shadowSampler;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = shadowDescriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+}
+
 void VulkanContext::allocateLightingDescriptorSet() {
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1379,10 +1677,17 @@ void VulkanContext::setLighting(const Vect3& cameraPosition, const LightingState
     data.cameraPosition = cameraPosition;
     data.ambientColor = state.ambientColor;
     data.lightCount = static_cast<float>(std::min(static_cast<uint32_t>(state.lights.size()), MAX_LIGHTS));
+    data.shadowLightIndex = static_cast<float>(shadowLightIndex);
+    data.shadowLightMatrix = shadowLightMatrix;
     for (uint32_t i = 0; i < static_cast<uint32_t>(data.lightCount); i++)
         data.lights[i] = toGpuLight(state.lights[i]);
 
     memcpy(lightingBufferMapped, &data, sizeof(LightingData));
+}
+
+void VulkanContext::setShadowLight(const Mat4& lightViewProj, int lightIndex) {
+    shadowLightMatrix = lightViewProj;
+    shadowLightIndex = lightIndex;
 }
 
 void VulkanContext::updateModelMatrixBuffer(const std::vector<ModelData>& modelData) {
@@ -1446,6 +1751,93 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     if (vkBeginCommandBuffer(cmdBuffer, &beginInfo) != VK_SUCCESS)
         throw std::runtime_error("Failed to begin recording command buffer!");
 
+    // Index ranges describing the frame's geometry, relative to the sky
+    // backdrop that lives at [0, SKY_INDEX_COUNT):
+    //   [0, SKY_INDEX_COUNT)          — sky backdrop cube
+    //   [SKY, SKY + firstBlended)     — opaque world content
+    //   [SKY + firstBlended, SKY + screenStart)  — blended world (sprites/text)
+    //   [SKY + screenStart, ...)      — screen-space (HUD) blended content
+    uint32_t baseIndex = 0;
+    uint32_t firstBlended = 0;
+    uint32_t screenStart = 0;
+    uint32_t rendererIndexCount = 0;
+    if (indexCount > SKY_INDEX_COUNT) {
+        baseIndex = SKY_INDEX_COUNT;
+        rendererIndexCount = indexCount - baseIndex;
+        const uint32_t worldBlendEnd = (blendedIndexOffset <= rendererIndexCount) ? blendedIndexOffset : rendererIndexCount;
+        screenStart = (screenIndexOffset <= rendererIndexCount) ? screenIndexOffset : rendererIndexCount;
+        firstBlended = (worldBlendEnd < screenStart) ? worldBlendEnd : screenStart;
+    }
+
+    // ---- Directional shadow pass (depth-only, casts shadows on the world) ----
+    if (shadowLightIndex >= 0 && firstBlended > 0) {
+        VkRenderPassBeginInfo shadowPassInfo{};
+        shadowPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        shadowPassInfo.renderPass = shadowRenderPass;
+        shadowPassInfo.framebuffer = shadowFramebuffer;
+        shadowPassInfo.renderArea.offset = { 0, 0 };
+        shadowPassInfo.renderArea.extent = { SHADOW_MAP_SIZE, SHADOW_MAP_SIZE };
+
+        VkClearValue shadowClear{};
+        shadowClear.depthStencil = { 1.0f, 0 };
+        shadowPassInfo.clearValueCount = 1;
+        shadowPassInfo.pClearValues = &shadowClear;
+
+        vkCmdBeginRenderPass(cmdBuffer, &shadowPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkViewport shadowViewport{};
+        shadowViewport.x = 0.0f;
+        shadowViewport.y = 0.0f;
+        shadowViewport.width = static_cast<float>(SHADOW_MAP_SIZE);
+        shadowViewport.height = static_cast<float>(SHADOW_MAP_SIZE);
+        shadowViewport.minDepth = 0.0f;
+        shadowViewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmdBuffer, 0, 1, &shadowViewport);
+
+        VkRect2D shadowScissor{};
+        shadowScissor.offset = { 0, 0 };
+        shadowScissor.extent = { SHADOW_MAP_SIZE, SHADOW_MAP_SIZE };
+        vkCmdSetScissor(cmdBuffer, 0, 1, &shadowScissor);
+
+        vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
+
+        // shadow.vert reads the model storage buffer (set 1) and the frame
+        // matrix push constant (filled with the light's view-projection below).
+        vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                shadowPipelineLayout, 1, 1, &modelDescriptorSet, 0, nullptr);
+
+        vkCmdPushConstants(cmdBuffer, shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(Mat4), &shadowLightMatrix);
+
+        VkBuffer vertexBuffers[] = { vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+        vkCmdDrawIndexed(cmdBuffer, firstBlended, 1, baseIndex, SKY_VERTEX_COUNT, 0);
+
+        vkCmdEndRenderPass(cmdBuffer);
+
+        // Make the shadow-map depth writes visible to the main pass's fragment
+        // shader before it samples the map.
+        VkImageMemoryBarrier shadowBarrier{};
+        shadowBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        shadowBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        shadowBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        shadowBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        shadowBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        shadowBarrier.image = shadowImage;
+        shadowBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        shadowBarrier.subresourceRange.levelCount = 1;
+        shadowBarrier.subresourceRange.layerCount = 1;
+        shadowBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        shadowBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmdBuffer,
+                             VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &shadowBarrier);
+    }
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass;
@@ -1477,8 +1869,10 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     scissor.extent = swapChainExtent;
     vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
 
-    VkDescriptorSet descriptorSets[] = { textureDescriptorSet, modelDescriptorSet, lightingDescriptorSet };
-    vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 3, descriptorSets, 0, nullptr);
+    VkDescriptorSet descriptorSets[] = {
+        textureDescriptorSet, modelDescriptorSet, lightingDescriptorSet, shadowDescriptorSet
+    };
+    vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, descriptorSets, 0, nullptr);
 
     FramePushData push{};
     push.viewProjection = viewProjectionMatrix;
@@ -1501,13 +1895,7 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
 
     // Renderer content: indices from SKY_INDEX_COUNT onward, all offset to base
     // vertex SKY_VERTEX_COUNT (where updateVertexBuffer placed them).
-    if (indexCount > SKY_INDEX_COUNT) {
-        const uint32_t baseIndex = SKY_INDEX_COUNT;
-        const uint32_t rendererIndexCount = indexCount - baseIndex;
-        const uint32_t worldBlendEnd = (blendedIndexOffset <= rendererIndexCount) ? blendedIndexOffset : rendererIndexCount;
-        const uint32_t screenStart  = (screenIndexOffset <= rendererIndexCount) ? screenIndexOffset : rendererIndexCount;
-        const uint32_t firstBlended = (worldBlendEnd < screenStart) ? worldBlendEnd : screenStart;
-
+    if (rendererIndexCount > 0) {
         if (firstBlended > 0) {
             vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
             vkCmdDrawIndexed(cmdBuffer, firstBlended, 1, baseIndex, SKY_VERTEX_COUNT, 0);
@@ -1645,19 +2033,21 @@ void VulkanContext::createTextureDescriptorSetLayout() {
 }
 
 void VulkanContext::createDescriptorPool() {
-    VkDescriptorPoolSize poolSizes[3];
+    VkDescriptorPoolSize poolSizes[4];
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[0].descriptorCount = MAX_TEXTURES;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[1].descriptorCount = 1;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[2].descriptorCount = 1;
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[3].descriptorCount = 1;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 3;
+    poolInfo.poolSizeCount = 4;
     poolInfo.pPoolSizes = poolSizes;
-    poolInfo.maxSets = 3;
+    poolInfo.maxSets = 4;
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
         throw std::runtime_error("Failed to create descriptor pool!");

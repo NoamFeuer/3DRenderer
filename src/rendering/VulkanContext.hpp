@@ -92,6 +92,12 @@ public:
     // the lighting UBO. Call once per frame before drawFrame().
     void setLighting(const Vect3& cameraPosition, const LightingState& state);
 
+    // Configures the directional shadow map for the frame. `lightViewProj`
+    // maps world space into the light's orthographic clip space; `lightIndex`
+    // is the index of the shadow-casting light in the frame's light list, or -1
+    // to disable shadows. Call once per frame before drawFrame().
+    void setShadowLight(const Mat4& lightViewProj, int lightIndex);
+
     // Configures the procedural sky. Enabled by default; set the two gradient
     // colors and the centre (usually the camera position) each frame.
     void setSkyEnabled(bool enabled) { skyEnabled = enabled; }
@@ -197,6 +203,38 @@ private:
     Vect3 skyTopColor{ 0.18f, 0.26f, 0.45f };
     Vect3 skyBottomColor{ 0.72f, 0.80f, 0.85f };
     Vect3 skyCenter{ 0.0f, 0.0f, 0.0f };
+
+    // Directional shadow mapping. The engine computes a tight orthographic
+    // view-projection for the first directional light each frame and the whole
+    // scene is rendered into a depth-only shadow map before the main color
+    // pass; triangle.frag samples it for the shadow-casting light.
+    static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
+    VkImage shadowImage = VK_NULL_HANDLE;
+    VkDeviceMemory shadowImageMemory = VK_NULL_HANDLE;
+    VkImageView shadowImageView = VK_NULL_HANDLE;
+    VkSampler shadowSampler = VK_NULL_HANDLE;
+    VkRenderPass shadowRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer shadowFramebuffer = VK_NULL_HANDLE;
+    VkPipeline shadowPipeline = VK_NULL_HANDLE;
+    // Separate pipeline layout for the shadow pass: only the frame matrix push
+    // constant and the model storage buffer set are used, no fragment stage.
+    VkPipelineLayout shadowPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout shadowDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSet shadowDescriptorSet = VK_NULL_HANDLE;
+    // Light-space orthographic matrix uploaded to the lighting UBO so the
+    // fragment shader can transform world positions into the shadow map.
+    Mat4 shadowLightMatrix;
+    // Index (into the light list) of the light whose shadow map is active,
+    // or -1 when no shadow-casting light is configured.
+    int shadowLightIndex = -1;
+
+    void createShadowDescriptorSetLayout();
+    void allocateShadowDescriptorSet();
+    void updateShadowDescriptor();
+    void createShadowResources();
+    void createShadowRenderPass();
+    void createShadowPipeline();
+    void createShadowSampler();
 
     void createTextureSampler();
     void createTextureDescriptorSetLayout();

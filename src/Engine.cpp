@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 #include <GLFW/glfw3.h>
+#include "rendering/ShadowUtils.hpp"
 
 Engine::Engine(int width, int height, const std::string& title) {
     window = std::make_unique<Window>(width, height, title);
@@ -65,6 +66,21 @@ void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, C
         float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         Mat4 viewProjection = camera->getProjectionMatrix(aspectRatio) * camera->getViewMatrix();
         vulkanContext->setViewProjection(viewProjection);
+
+        int shadowIdx = -1;
+        Vect3 shadowDir;
+        for (size_t i = 0; i < renderer->lighting.lights.size() && i < 16; i++) {
+            if (renderer->lighting.lights[i].type == Light::Type::Directional) {
+                shadowIdx = static_cast<int>(i);
+                shadowDir = renderer->lighting.lights[i].direction;
+                break;
+            }
+        }
+        Mat4 shadowMatrix;
+        if (shadowIdx >= 0)
+            shadowMatrix = ShadowUtils::computeDirectionalShadowMatrix(*camera, aspectRatio, shadowDir);
+        vulkanContext->setShadowLight(shadowMatrix, shadowIdx);
+
         vulkanContext->setLighting(camera->position, renderer->lighting);
         vulkanContext->setSkyCenter(camera->position);
 
@@ -120,6 +136,21 @@ void Engine::runFixed(
         float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         Mat4 viewProjection = camera->getProjectionMatrix(aspectRatio) * camera->getViewMatrix();
         vulkanContext->setViewProjection(viewProjection);
+
+        int shadowIdx = -1;
+        Vect3 shadowDir;
+        for (size_t i = 0; i < renderer->lighting.lights.size() && i < 16; i++) {
+            if (renderer->lighting.lights[i].type == Light::Type::Directional) {
+                shadowIdx = static_cast<int>(i);
+                shadowDir = renderer->lighting.lights[i].direction;
+                break;
+            }
+        }
+        Mat4 shadowMatrix;
+        if (shadowIdx >= 0)
+            shadowMatrix = ShadowUtils::computeDirectionalShadowMatrix(*camera, aspectRatio, shadowDir);
+        vulkanContext->setShadowLight(shadowMatrix, shadowIdx);
+
         vulkanContext->setLighting(camera->position, renderer->lighting);
         vulkanContext->setSkyCenter(camera->position);
 
