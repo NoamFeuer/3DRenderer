@@ -51,7 +51,6 @@ Font Font::load(const std::string& path, int pixelHeight, VulkanContext& context
     file.read(reinterpret_cast<char*>(fontData.data()), fileSize);
     file.close();
 
-    // Pack the printable ASCII range into a single-channel atlas bitmap.
     constexpr int ATLAS_WIDTH = 1024;
     constexpr int ATLAS_HEIGHT = 1024;
     std::vector<unsigned char> atlasBitmap(static_cast<size_t>(ATLAS_WIDTH) * ATLAS_HEIGHT);
@@ -64,14 +63,10 @@ Font Font::load(const std::string& path, int pixelHeight, VulkanContext& context
     stbtt_PackSetOversampling(&packContext, OVERSAMPLE, OVERSAMPLE);
 
     std::vector<stbtt_packedchar> packedChars(CHAR_COUNT);
-    if (!stbtt_PackFontRange(&packContext, fontData.data(), 0,
-                             static_cast<float>(pixelHeight),
-                             FIRST_CHAR, CHAR_COUNT, packedChars.data())) {
+    if (!stbtt_PackFontRange(&packContext, fontData.data(), 0, static_cast<float>(pixelHeight), FIRST_CHAR, CHAR_COUNT, packedChars.data()))
         throw std::runtime_error("Failed to pack font glyphs!");
-    }
     stbtt_PackEnd(&packContext);
 
-    // Vertical metrics at the rasterized size.
     stbtt_fontinfo fontInfo;
     if (!stbtt_InitFont(&fontInfo, fontData.data(), 0))
         throw std::runtime_error("Failed to parse font file: " + path);
@@ -92,8 +87,7 @@ Font Font::load(const std::string& path, int pixelHeight, VulkanContext& context
         g.uvTop = static_cast<float>(pc.y0) / ATLAS_HEIGHT;
         g.uvRight = static_cast<float>(pc.x1) / ATLAS_WIDTH;
         g.uvBottom = static_cast<float>(pc.y1) / ATLAS_HEIGHT;
-        // The packed box is in oversampled atlas pixels; xoff/yoff/xadvance are
-        // in logical output pixels, so shrink the box to match.
+
         g.width = (static_cast<float>(pc.x1) - pc.x0) / OVERSAMPLE;
         g.height = (static_cast<float>(pc.y1) - pc.y0) / OVERSAMPLE;
         g.bearingX = pc.xoff;
@@ -101,8 +95,6 @@ Font Font::load(const std::string& path, int pixelHeight, VulkanContext& context
         g.advance = pc.xadvance;
     }
 
-    // Bake the alpha-coverage bitmap into a premultiplied-white RGBA atlas so
-    // the blended pipeline can composite it without dark fringing.
     std::vector<uint8_t> rgba(static_cast<size_t>(ATLAS_WIDTH) * ATLAS_HEIGHT * 4);
     for (size_t i = 0; i < atlasBitmap.size(); i++) {
         uint8_t a = atlasBitmap[i];

@@ -12,7 +12,7 @@ namespace {
     float twoPi = 6.283185307179586f;
 
     struct FaceVert {
-        int position = -1; // 0-based index into positions
+        int position = -1;
         int uv = -1;
         int normal = -1;
     };
@@ -30,20 +30,17 @@ namespace {
         }
     };
 
-    // Parses "v/vt/vn", "v//vn", or "v" into resolved (0-based) indices.
     FaceVert parseFaceVertex(const std::string& token, int posCount, int uvCount, int normCount) {
         FaceVert fv;
 
-        // Explicit 1-based positive indices are the common case; fall back to
-        // a general parse that also handles negatives.
         size_t slash1 = token.find('/');
         size_t slash2 = (slash1 == std::string::npos) ? std::string::npos : token.find('/', slash1 + 1);
 
         auto parseIndex = [](const std::string& s, int count) -> int {
             if (s.empty()) return -1;
             int idx = std::stoi(s);
-            if (idx < 0) idx = count + idx + 1; // negative = relative to end
-            return idx - 1;                     // OBJ is 1-based
+            if (idx < 0) idx = count + idx + 1;
+            return idx - 1;
         };
 
         fv.position = parseIndex(token.substr(0, slash1), posCount);
@@ -66,7 +63,6 @@ namespace {
 Mesh Mesh::createCube() {
     Mesh mesh;
 
-    // 6 faces, 4 unique vertices each, outward normals, full-face UVs.
     const float h = 0.5f;
     const struct {
         Vect3 v[4];
@@ -108,7 +104,6 @@ Mesh Mesh::createSphere(float radius, int slices, int stacks) {
     const int stacksUsed = stacks < 3 ? 3 : stacks;
     const int slicesUsed = slices < 3 ? 3 : slices;
 
-    // Top cap at north pole.
     const uint32_t northPole = static_cast<uint32_t>(mesh.vertices.size());
     {
         VertexData v;
@@ -118,8 +113,7 @@ Mesh Mesh::createSphere(float radius, int slices, int stacks) {
         v.v = 0.0f;
         mesh.vertices.push_back(v);
     }
-
-    // Rings of vertices.
+    
     std::vector<std::vector<uint32_t>> ringIndex(stacksUsed + 1);
     for (int stack = 1; stack <= stacksUsed; stack++) {
         const float phi = twoPi * static_cast<float>(stack) / static_cast<float>(stacksUsed + 1);
@@ -140,7 +134,6 @@ Mesh Mesh::createSphere(float radius, int slices, int stacks) {
         }
     }
 
-    // Bottom cap at south pole.
     const uint32_t southPole = static_cast<uint32_t>(mesh.vertices.size());
     {
         VertexData v;
@@ -151,7 +144,6 @@ Mesh Mesh::createSphere(float radius, int slices, int stacks) {
         mesh.vertices.push_back(v);
     }
 
-    // North cap triangles (winding outward: face CCW when viewed from outside).
     for (int slice = 0; slice < slicesUsed; slice++) {
         int next = (slice + 1) % slicesUsed;
         mesh.indices.push_back(northPole);
@@ -159,7 +151,6 @@ Mesh Mesh::createSphere(float radius, int slices, int stacks) {
         mesh.indices.push_back(ringIndex[1][slice]);
     }
 
-    // Middle ring quads.
     for (int stack = 1; stack < stacksUsed; stack++) {
         for (int slice = 0; slice < slicesUsed; slice++) {
             int next = (slice + 1) % slicesUsed;
@@ -173,7 +164,6 @@ Mesh Mesh::createSphere(float radius, int slices, int stacks) {
         }
     }
 
-    // South cap triangles.
     for (int slice = 0; slice < slicesUsed; slice++) {
         int next = (slice + 1) % slicesUsed;
         mesh.indices.push_back(ringIndex[stacksUsed][slice]);
@@ -294,7 +284,6 @@ Mesh Mesh::loadObj(const std::string& path) {
             if (face.size() >= 3)
                 faces.push_back(face);
         }
-        // ignore o/g/usemtl/mtllib/s/lights: not needed for geometry
     }
 
     if (positions.empty())
@@ -304,7 +293,6 @@ Mesh Mesh::loadObj(const std::string& path) {
     std::unordered_map<FaceVert, uint32_t, FaceVertHash> unique;
 
     for (const auto& face : faces) {
-        // Fan triangulation for polygons / quads.
         for (size_t i = 1; i + 1 < face.size(); i++) {
             const FaceVert tris[3] = { face[0], face[i], face[i + 1] };
             for (const FaceVert& fv : tris) {
@@ -331,7 +319,6 @@ Mesh Mesh::loadObj(const std::string& path) {
         }
     }
 
-    // Smooth-shade faces when the file carried no normals.
     bool hasAnyNormal = false;
     for (const auto& face : faces)
         for (const FaceVert& fv : face)

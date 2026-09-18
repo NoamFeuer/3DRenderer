@@ -75,17 +75,12 @@ Texture Texture::create(uint32_t width, uint32_t height, const uint8_t* rgbaPixe
     return texture;
 }
 
-void Texture::uploadToGpu(VulkanContext& context, Texture& texture,
-                          uint32_t width, uint32_t height, const uint8_t* rgbaPixels) {
+void Texture::uploadToGpu(VulkanContext& context, Texture& texture, uint32_t width, uint32_t height, const uint8_t* rgbaPixels) {
     const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
-    context.createBuffer(
-        imageSize,
-        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        stagingBuffer, stagingBufferMemory);
+    context.createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
     void* data;
     vkMapMemory(context.getDevice(), stagingBufferMemory, 0, imageSize, 0, &data);
@@ -104,13 +99,9 @@ void Texture::uploadToGpu(VulkanContext& context, Texture& texture,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         texture.image, texture.imageMemory);
 
-    context.transitionImageLayout(
-        texture.image, format,
-        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    context.transitionImageLayout(texture.image, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     context.copyBufferToImage(stagingBuffer, texture.image, texture.width, texture.height);
-    context.transitionImageLayout(
-        texture.image, format,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    context.transitionImageLayout(texture.image, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     texture.imageView = context.createImageView(texture.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
 

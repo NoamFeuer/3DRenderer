@@ -6,17 +6,11 @@
 #include <stdexcept>
 
 namespace {
-    // Inverse-transpose of the model's upper 3x3, used to transform vertex
-    // normals correctly under non-uniform scale.
     Mat4 normalMatrixOf(const Mat4& model) {
         float a = model.m[0][0], b = model.m[0][1], c = model.m[0][2];
         float d = model.m[1][0], e = model.m[1][1], f = model.m[1][2];
         float g = model.m[2][0], h = model.m[2][1], i = model.m[2][2];
 
-        // Cofactor (adjugate) of the transpose gives the inverse of the
-        // determinant-scaled matrix; drop the determinant so the result is a
-        // pure rotation/scaling matrix (its length is irrelevant after
-        // normalization in the shader).
         Mat4 n;
         n.m[0][0] = e * i - f * h; n.m[0][1] = c * h - b * i; n.m[0][2] = b * f - c * e;
         n.m[1][0] = f * g - d * i; n.m[1][1] = a * i - c * g; n.m[1][2] = c * d - a * f;
@@ -26,7 +20,6 @@ namespace {
 }
 
 Renderer::Renderer() {
-    // Default headlight so scenes read shapes immediately.
     lighting.lights.push_back(Light{});
 }
 
@@ -110,8 +103,7 @@ void Renderer::drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, 
     drawRectangle(p1, p2, p3, p4, color, -1);
 }
 
-void Renderer::drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4,
-                             const Vect3& color, uint32_t modelIndex, const Vect3& normal) {
+void Renderer::drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color, uint32_t modelIndex, const Vect3& normal) {
     int idx = static_cast<int>(modelIndex);
     indices.push_back(pushUniqueVertex({ p1, color, 0.0f, 0.0f, -1, idx, normal }));
     indices.push_back(pushUniqueVertex({ p2, color, 0.0f, 0.0f, -1, idx, normal }));
@@ -121,14 +113,11 @@ void Renderer::drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, 
     indices.push_back(pushUniqueVertex({ p4, color, 0.0f, 0.0f, -1, idx, normal }));
 }
 
-void Renderer::drawTexturedRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4,
-                                     const Vect3& color, int textureIndex) {
+void Renderer::drawTexturedRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color, int textureIndex) {
     drawTexturedRectangle(p1, p2, p3, p4, color, textureIndex, -1);
 }
 
-void Renderer::drawTexturedRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4,
-                                     const Vect3& color, int textureIndex, uint32_t modelIndex,
-                                     const Vect3& normal) {
+void Renderer::drawTexturedRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color, int textureIndex, uint32_t modelIndex, const Vect3& normal) {
     int idx = static_cast<int>(modelIndex);
     Vertex v0{ p1, color, 0.0f, 0.0f, textureIndex, idx, normal };
     Vertex v1{ p2, color, 1.0f, 0.0f, textureIndex, idx, normal };
@@ -165,12 +154,11 @@ void Renderer::drawCircle(const Vect3& center, float radius, const Vect3& color,
     }
 }
 
-void Renderer::drawSprite(const Vect3& center, const Vect3& size, int textureIndex,
-                          const Vect3& color, float rotation) {
+void Renderer::drawSprite(const Vect3& center, const Vect3& size, int textureIndex, const Vect3& color, float rotation) {
     beginBlended();
 
     Material spriteMaterial;
-    spriteMaterial.unlit = true; // sprites should never look shaded
+    spriteMaterial.unlit = true;
 
     Mat4 model = Mat4::translation(center.x, center.y, center.z) *
                  Mat4::rotationZ(rotation) *
@@ -190,8 +178,7 @@ void Renderer::drawSprite(const Vect3& center, const Vect3& size, int textureInd
     indices.push_back(pushUniqueVertex(v3));
 }
 
-void Renderer::drawText(const Font& font, const std::string& text, const Vect3& position, float size,
-                        const Vect3& color) {
+void Renderer::drawText(const Font& font, const std::string& text, const Vect3& position, float size, const Vect3& color) {
     if (text.empty())
         return;
 
@@ -199,8 +186,7 @@ void Renderer::drawText(const Font& font, const std::string& text, const Vect3& 
     emitText(font, text, position, size / static_cast<float>(font.getPixelHeight()), color);
 }
 
-void Renderer::drawTextScreen(const Font& font, const std::string& text, float x, float y,
-                              float sizePx, const Vect3& color) {
+void Renderer::drawTextScreen(const Font& font, const std::string& text, float x, float y, float sizePx, const Vect3& color) {
     if (text.empty())
         return;
 
@@ -212,8 +198,7 @@ void Renderer::drawPanelScreen(float x, float y, float width, float height, cons
     drawPanelScreen(x, y, width, height, -1, color);
 }
 
-void Renderer::drawPanelScreen(float x, float y, float width, float height, int textureIndex,
-                               const Vect3& color) {
+void Renderer::drawPanelScreen(float x, float y, float width, float height, int textureIndex, const Vect3& color) {
     beginScreenText();
 
     float right = x + width;
@@ -232,8 +217,7 @@ void Renderer::drawPanelScreen(float x, float y, float width, float height, int 
     indices.push_back(pushUniqueVertex(v3));
 }
 
-void Renderer::emitText(const Font& font, const std::string& text, const Vect3& position,
-                        float scale, const Vect3& color) {
+void Renderer::emitText(const Font& font, const std::string& text, const Vect3& position, float scale, const Vect3& color) {
     const int textureIndex = font.getTextureIndex();
     const float baselineY = position.y + font.getAscent() * scale;
     float penX = 0.0f;
@@ -269,21 +253,15 @@ void Renderer::emitText(const Font& font, const std::string& text, const Vect3& 
     }
 }
 
-void Renderer::drawCube(const Vect3& center, const Vect3& color, const Mat4& rotation, const Vect3& scale,
-                        const Material& material) {
+void Renderer::drawCube(const Vect3& center, const Vect3& color, const Mat4& rotation, const Vect3& scale, const Material& material) {
     drawCubeWithTexture(center, color, -1, rotation, scale, material);
 }
 
-void Renderer::drawTexturedCube(const Vect3& center, const Vect3& color, int textureIndex,
-                                const Mat4& rotation, const Vect3& scale, const Material& material) {
+void Renderer::drawTexturedCube(const Vect3& center, const Vect3& color, int textureIndex, const Mat4& rotation, const Vect3& scale, const Material& material) {
     drawCubeWithTexture(center, color, textureIndex, rotation, scale, material);
 }
 
-void Renderer::drawCubeWithTexture(const Vect3& center, const Vect3& color, int textureIndex,
-                                   const Mat4& rotation, const Vect3& scale, const Material& material) {
-    // The rotation/scale/translation are baked into a model matrix and applied
-    // on the GPU; only local-space (-0.5..0.5) corners are pushed to the vertex
-    // buffer. Each face carries its outward normal so it lights independently.
+void Renderer::drawCubeWithTexture(const Vect3& center, const Vect3& color, int textureIndex, const Mat4& rotation, const Vect3& scale, const Material& material) {
     Mat4 model = Mat4::translation(center.x, center.y, center.z) * rotation * Mat4::scale(scale.x, scale.y, scale.z);
     uint32_t modelIndex = addModel(model, material);
 
@@ -326,9 +304,7 @@ void Renderer::drawSphere(const Vect3& center, float radius, const Vect3& color,
     drawMesh(Mesh::createSphere(radius, slices, stacks), center, color, material);
 }
 
-void Renderer::drawMesh(const Mesh& mesh, const Vect3& center, const Vect3& color,
-                        const Material& material, const Mat4& rotation, const Vect3& scale,
-                        int textureIndex) {
+void Renderer::drawMesh(const Mesh& mesh, const Vect3& center, const Vect3& color, const Material& material, const Mat4& rotation, const Vect3& scale, int textureIndex) {
     if (mesh.vertices.empty() || mesh.indices.empty())
         return;
 
@@ -336,8 +312,6 @@ void Renderer::drawMesh(const Mesh& mesh, const Vect3& center, const Vect3& colo
     uint32_t modelIndex = addModel(model, material);
     const int idx = static_cast<int>(modelIndex);
 
-    // Push the mesh's unique vertices as a contiguous block, then emit its
-    // indices offset to that block (the renderer may already hold geometry).
     const uint32_t baseVertex = static_cast<uint32_t>(vertices.size());
     for (const auto& mv : mesh.vertices) {
         Vertex v;

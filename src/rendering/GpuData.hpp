@@ -19,7 +19,7 @@ static_assert(sizeof(ModelData) == 160, "ModelData must match the GLSL struct (4
 
 struct alignas(16) GpuLight {
     Vect3 position;
-    float type;          // Light::Type stored as float (GLSL reads vec4.a as float)
+    float type;
     Vect3 direction;
     float spotOuterCos;
     Vect3 color;
@@ -37,12 +37,10 @@ struct alignas(16) LightingData {
     Vect3 ambientColor;
     float pad1;
     float lightCount;
-    float shadowLightIndex;  // index of the shadow-casting light, or -1
+    float shadowLightIndex;
     float pad2b;
     float pad2c;
     GpuLight lights[MAX_LIGHTS];
-    // Light-space orthographic view-projection used by the fragment shader to
-    // transform world positions into the directional light's shadow map.
     Mat4 shadowLightMatrix;
 };
 static_assert(sizeof(LightingData) == 48 + sizeof(GpuLight) * MAX_LIGHTS + sizeof(Mat4), "LightingData layout");
