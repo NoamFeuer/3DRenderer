@@ -5,9 +5,6 @@
 #include "../math/Mat4.hpp"
 #include "../rendering/Mesh.hpp"
 
-// Demonstrates the lighting/material milestone: directional, point and spot
-// lights, emissive/glossy materials, an OBJ mesh (pyramid), a mesh ground
-// plane, MSAA, and the procedural sky gradient.
 int main() {
     try {
         Engine engine(1000, 700, "Lighting");

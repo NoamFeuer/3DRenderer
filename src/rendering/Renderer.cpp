@@ -257,12 +257,21 @@ void Renderer::drawCube(const Vect3& center, const Vect3& color, const Mat4& rot
     drawCubeWithTexture(center, color, -1, rotation, scale, material);
 }
 
+void Renderer::drawCube(const Mat4& model, const Vect3& color, const Material& material, int textureIndex) {
+    emitCubeModel(model, color, textureIndex, material);
+}
+
 void Renderer::drawTexturedCube(const Vect3& center, const Vect3& color, int textureIndex, const Mat4& rotation, const Vect3& scale, const Material& material) {
     drawCubeWithTexture(center, color, textureIndex, rotation, scale, material);
 }
 
 void Renderer::drawCubeWithTexture(const Vect3& center, const Vect3& color, int textureIndex, const Mat4& rotation, const Vect3& scale, const Material& material) {
-    Mat4 model = Mat4::translation(center.x, center.y, center.z) * rotation * Mat4::scale(scale.x, scale.y, scale.z);
+    emitCubeModel(
+        Mat4::translation(center.x, center.y, center.z) * rotation * Mat4::scale(scale.x, scale.y, scale.z),
+        color, textureIndex, material);
+}
+
+void Renderer::emitCubeModel(const Mat4& model, const Vect3& color, int textureIndex, const Material& material) {
     uint32_t modelIndex = addModel(model, material);
 
     float h = 0.5f;
@@ -309,6 +318,17 @@ void Renderer::drawMesh(const Mesh& mesh, const Vect3& center, const Vect3& colo
         return;
 
     Mat4 model = Mat4::translation(center.x, center.y, center.z) * rotation * Mat4::scale(scale.x, scale.y, scale.z);
+    emitMesh(mesh, model, color, material, textureIndex);
+}
+
+void Renderer::drawMesh(const Mesh& mesh, const Mat4& model, const Vect3& color, const Material& material, int textureIndex) {
+    emitMesh(mesh, model, color, material, textureIndex);
+}
+
+void Renderer::emitMesh(const Mesh& mesh, const Mat4& model, const Vect3& color, const Material& material, int textureIndex) {
+    if (mesh.vertices.empty() || mesh.indices.empty())
+        return;
+
     uint32_t modelIndex = addModel(model, material);
     const int idx = static_cast<int>(modelIndex);
 

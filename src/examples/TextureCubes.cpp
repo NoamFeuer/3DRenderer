@@ -3,8 +3,6 @@
 #include "../math/Vect3.hpp"
 #include "../math/Mat4.hpp"
 
-// Demonstrates the bindless texture API: Engine::loadTexture() returns an
-// index that Renderer::drawTexturedCube() attaches to each face.
 int main() {
     try {
         Engine engine(800, 600, "Textured Cubes");

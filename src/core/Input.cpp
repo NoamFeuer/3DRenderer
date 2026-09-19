@@ -12,6 +12,12 @@ Input::Input(Window& window) : handle(window.getHandle()) {
 void Input::update() {
     double x, y;
     glfwGetCursorPos(handle, &x, &y);
+    mouseX = static_cast<float>(x);
+    mouseY = static_cast<float>(y);
+
+    bool mouseButtonDown = glfwGetMouseButton(handle, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    mouseButtonPressed = mouseButtonDown && !mouseButtonDownPrev;
+    mouseButtonDownPrev = mouseButtonDown;
 
     // Esc releases the cursor so the user can interact with the OS UI; left
     // click re-captures it to look around again. On each transition the cursor
@@ -67,6 +73,10 @@ int Input::toGlfwKey(Key key) {
         case Key::A:          return GLFW_KEY_A;
         case Key::S:          return GLFW_KEY_S;
         case Key::D:          return GLFW_KEY_D;
+        case Key::E:          return GLFW_KEY_E;
+        case Key::Q:          return GLFW_KEY_Q;
+        case Key::R:          return GLFW_KEY_R;
+        case Key::P:          return GLFW_KEY_P;
         case Key::Space:      return GLFW_KEY_SPACE;
         case Key::LeftShift:  return GLFW_KEY_LEFT_SHIFT;
         case Key::Escape:     return GLFW_KEY_ESCAPE;

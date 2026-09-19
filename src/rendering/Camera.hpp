@@ -2,6 +2,7 @@
 
 #include "../math/Mat4.hpp"
 #include "../math/Vect3.hpp"
+#include "../math/Quat.hpp"
 
 class Camera {
 public:
@@ -25,6 +26,10 @@ public:
     Mat4 getViewMatrix() const;
     Mat4 getProjectionMatrix(float aspectRatio) const;
 
+    // World-space orientation of the camera (yaw around Y, then pitch around X).
+    Quat getOrientation() const;
+
     Vect3 getForward() const;
     Vect3 getRight() const;
+    Vect3 getUp() const;
 };

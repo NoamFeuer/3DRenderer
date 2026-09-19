@@ -30,4 +30,7 @@ struct Mat4 {
 	// projection() (near -> 0, far -> 1 in NDC). left/right/bottom/top are the
 	// world-space bounds at the near plane.
 	static Mat4 ortho(float left, float right, float bottom, float top, float near, float far);
+
+	// Inverse of the matrix. Returns identity for (near-)singular matrices.
+	Mat4 inverse() const;
 };

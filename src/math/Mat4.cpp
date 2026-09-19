@@ -1,4 +1,5 @@
 #include <cmath>
+#include <utility>
 #include "Mat4.hpp"
 
 Mat4::Mat4() {
@@ -103,17 +104,66 @@ Mat4 Mat4::projection(float fov, float aspect, float near, float far) {
 
 	float tanHalfFov = tan(fov / 2.0f);
 
-	// Vulkan NDC depth range is [0,1], so the near plane maps to 0 and the far
-	// plane to 1 (w = -eyeZ keeps the depth sign in line with the -Z viewing
-	// direction). Unlike the old OpenGL-style -1..1 mapping this keeps the near
-	// half of the frustum inside the clip volume.
+	// Vulkan NDC has Y pointing down and a depth range of [0,1], so the near
+	// plane maps to 0 and the far plane to 1 (w = -eyeZ keeps the depth sign
+	// in line with the -Z viewing direction). The negative Y terms flip the
+	// projection so that world +Y (up) lands at the top of the rendered
+	// image instead of being mirrored vertically. Without this the whole
+	// scene renders upside down on a Vulkan swapchain.
 	m.m[0][0] = 1.0f / (aspect * tanHalfFov);
-	m.m[1][1] = 1.0f / tanHalfFov;
+	m.m[1][1] = -1.0f / tanHalfFov;
 	m.m[2][2] = far / (near - far);
 	m.m[2][3] = (far * near) / (near - far);
 	m.m[3][2] = -1.0f;
 
 	return m;
+}
+
+Mat4 Mat4::inverse() const {
+	Mat4 a = *this;
+	Mat4 inv;
+
+	for (int col = 0; col < 4; col++) {
+		int pivot = col;
+		float maxAbs = std::fabs(a.m[col][col]);
+		for (int row = col + 1; row < 4; row++) {
+			float v = std::fabs(a.m[row][col]);
+			if (v > maxAbs) {
+				maxAbs = v;
+				pivot = row;
+			}
+		}
+
+		if (maxAbs < 1e-12f)
+			return Mat4();
+
+		if (pivot != col) {
+			for (int j = 0; j < 4; j++) {
+				std::swap(a.m[pivot][j], a.m[col][j]);
+				std::swap(inv.m[pivot][j], inv.m[col][j]);
+			}
+		}
+
+		float d = a.m[col][col];
+		for (int j = 0; j < 4; j++) {
+			a.m[col][j] /= d;
+			inv.m[col][j] /= d;
+		}
+
+		for (int row = 0; row < 4; row++) {
+			if (row == col)
+				continue;
+			float f = a.m[row][col];
+			if (f == 0.0f)
+				continue;
+			for (int j = 0; j < 4; j++) {
+				a.m[row][j] -= f * a.m[col][j];
+				inv.m[row][j] -= f * inv.m[col][j];
+			}
+		}
+	}
+
+	return inv;
 }
 
 Mat4 Mat4::ortho(float left, float right, float bottom, float top, float near, float far) {

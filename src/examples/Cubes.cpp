@@ -3,8 +3,6 @@
 #include "../math/Vect3.hpp"
 #include "../math/Mat4.hpp"
 
-// Demonstrates the basic build API: solid-color cubes with transforms
-// (rotation and scale) via Renderer::drawCube().
 int main() {
     try {
         Engine engine(800, 600, "Colored Cubes");

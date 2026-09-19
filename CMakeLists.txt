@@ -13,6 +13,8 @@ file(GLOB_RECURSE ENGINE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/core/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/math/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/rendering/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/scene/*.cpp"
+    "${CMAKE_SOURCE_DIR}/src/physics/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/Engine.cpp"
 )
 
@@ -76,3 +78,5 @@ add_example(Sprites "${CMAKE_SOURCE_DIR}/src/examples/Sprites.cpp")
 add_example(Text "${CMAKE_SOURCE_DIR}/src/examples/Text.cpp")
 add_example(Hud "${CMAKE_SOURCE_DIR}/src/examples/Hud.cpp")
 add_example(LitScene "${CMAKE_SOURCE_DIR}/src/examples/LitScene.cpp")
+add_example(SceneGraph "${CMAKE_SOURCE_DIR}/src/examples/SceneGraph.cpp")
+add_example(Physics "${CMAKE_SOURCE_DIR}/src/examples/Physics.cpp")
