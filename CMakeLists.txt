@@ -16,6 +16,7 @@ file(GLOB_RECURSE ENGINE_SOURCES
     "${CMAKE_SOURCE_DIR}/src/scene/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/physics/*.cpp"
     "${CMAKE_SOURCE_DIR}/src/Engine.cpp"
+    "${CMAKE_SOURCE_DIR}/src/third_party/tiny_gltf.cc"
 )
 
 add_library(engine STATIC ${ENGINE_SOURCES})
@@ -80,3 +81,4 @@ add_example(Hud "${CMAKE_SOURCE_DIR}/src/examples/Hud.cpp")
 add_example(LitScene "${CMAKE_SOURCE_DIR}/src/examples/LitScene.cpp")
 add_example(SceneGraph "${CMAKE_SOURCE_DIR}/src/examples/SceneGraph.cpp")
 add_example(Physics "${CMAKE_SOURCE_DIR}/src/examples/Physics.cpp")
+add_example(Models "${CMAKE_SOURCE_DIR}/src/examples/Models.cpp")

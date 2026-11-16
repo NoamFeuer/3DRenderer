@@ -57,6 +57,15 @@ public:
     void updateIndexBuffer(const std::vector<uint32_t>& indices);
     void updateModelMatrixBuffer(const std::vector<ModelData>& modelData);
 
+    // Uploads mesh geometry to a persistent, device-local vertex/index buffer
+    // pair (the "static mesh" pool). The returned id can be drawn every frame
+    // without re-uploading; destruction happens on context cleanup.
+    uint32_t uploadStaticMesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices);
+
+    // Draw list for GPU-resident meshes, recorded by the command buffer. Also
+    // fills the per-instance model-index buffer used to transform static draws.
+    void setStaticDraws(const std::vector<StaticModelDraw>& staticDraws);
+
     void setBlendedIndexOffset(uint32_t offset) { blendedIndexOffset = offset; }
     void setScreenIndexOffset(uint32_t offset) { screenIndexOffset = offset; }
     void setViewProjection(const Mat4& viewProjection);
@@ -139,7 +148,7 @@ private:
     Vect3 skyBottomColor{ 0.72f, 0.80f, 0.85f };
     Vect3 skyCenter{ 0.0f, 0.0f, 0.0f };
 
-    static constexpr uint32_t SHADOW_MAP_SIZE = 2048;
+    static constexpr uint32_t SHADOW_MAP_SIZE = 4096;
     VkImage shadowImage = VK_NULL_HANDLE;
     VkDeviceMemory shadowImageMemory = VK_NULL_HANDLE;
     VkImageView shadowImageView = VK_NULL_HANDLE;
@@ -250,6 +259,36 @@ private:
 
     void createVertexBuffer();
     void createIndexBuffer();
+
+    static constexpr uint32_t MAX_STATIC_DRAWS = 4096;
+    static constexpr uint32_t MAX_STATIC_VERTICES = 100000;
+    static constexpr uint32_t MAX_STATIC_INDICES = 100000;
+
+    struct StaticMesh {
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory indexMemory = VK_NULL_HANDLE;
+        uint32_t vertexCount = 0;
+        uint32_t indexCount = 0;
+    };
+
+    std::vector<StaticMesh> staticMeshes;
+    uint32_t staticVertexTotal = 0;
+    uint32_t staticIndexTotal = 0;
+
+    // Host-visible buffer hosting one int per static draw (binding 1). Slot 0 is
+    // reserved for the value -1, used by the streamed (dynamic) draw path.
+    VkBuffer instanceBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory instanceBufferMemory = VK_NULL_HANDLE;
+    void* instanceBufferMapped = nullptr;
+    uint32_t instanceStride = sizeof(int32_t);
+
+    std::vector<StaticModelDraw> staticDraws;
+
+    void createInstanceDataBuffer();
+    void updateStaticInstanceData();
+    void cleanupStaticMeshPool();
 
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME

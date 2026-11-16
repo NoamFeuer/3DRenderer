@@ -12,6 +12,7 @@
 #include "rendering/Camera.hpp"
 #include "rendering/Texture.hpp"
 #include "rendering/Font.hpp"
+#include "rendering/Mesh.hpp"
 
 class Engine {
 public:
@@ -33,6 +34,11 @@ public:
     int loadTexture(const std::string& path);
 
     Font* loadFont(const std::string& path, int pixelHeight = 64);
+
+    // Uploads mesh geometry to GPU-resident (device-local) memory, once. Returns
+    // the static mesh id consumed by Renderer::drawStaticMesh. The mesh's color
+    // and texture are baked in; transforms are applied per draw.
+    uint32_t uploadStaticMesh(const Mesh& mesh, const Vect3& color = Vect3(1.0f, 1.0f, 1.0f), int textureIndex = -1);
 
     void setSkyColor(const Vect3& top, const Vect3& bottom);
     void setSkyEnabled(bool enabled);

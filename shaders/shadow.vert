@@ -20,9 +20,11 @@ layout(set = 1, binding = 0, row_major, std430) readonly buffer Models {
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 4) in int inModelIndex;
+// Instance-rate model index, used by GPU-resident static meshes (see triangle.vert).
+layout(location = 6) in int inStaticModelIndex;
 
 void main() {
-    bool transformed = inModelIndex >= 0;
-    mat4 model = transformed ? modelData.models[inModelIndex].model : mat4(1.0);
+    int modelIndex = (inModelIndex >= 0) ? inModelIndex : inStaticModelIndex;
+    mat4 model = modelIndex >= 0 ? modelData.models[modelIndex].model : mat4(1.0);
     gl_Position = pc.viewProjection * model * vec4(inPosition, 1.0);
 }

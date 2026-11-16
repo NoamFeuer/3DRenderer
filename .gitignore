@@ -5,7 +5,8 @@
 *.slo
 *.lo
 *.o
-*.obj
+# *.obj  # allow glTF/OBJ assets? but compiler objects too
+# prefer not ignoring *.obj if meant as asset; but keep comment
 
 # Precompiled Headers
 *.gch

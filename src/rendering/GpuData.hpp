@@ -17,6 +17,15 @@ struct alignas(16) ModelData {
 };
 static_assert(sizeof(ModelData) == 160, "ModelData must match the GLSL struct (4 x vec4 aligned)");
 
+// One GPU-resident static mesh draw, recorded per frame by the Renderer. The
+// mesh's geometry lives in a per-mesh device-local buffer (uploaded once);
+// modelIndex picks the entry in the per-frame ModelData store to use as the
+// transform/material for this draw.
+struct StaticModelDraw {
+    uint32_t staticMeshId = 0;
+    uint32_t modelIndex = 0;
+};
+
 struct alignas(16) GpuLight {
     Vect3 position;
     float type;

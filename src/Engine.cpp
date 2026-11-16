@@ -34,6 +34,10 @@ Font* Engine::loadFont(const std::string& path, int pixelHeight) {
     return raw;
 }
 
+uint32_t Engine::uploadStaticMesh(const Mesh& mesh, const Vect3& color, int textureIndex) {
+    return vulkanContext->uploadStaticMesh(Renderer::bakeMesh(mesh, color, textureIndex), mesh.indices);
+}
+
 void Engine::setSkyColor(const Vect3& top, const Vect3& bottom) {
     vulkanContext->setSkyColor(top, bottom);
 }
@@ -87,6 +91,7 @@ void Engine::run(const std::function<void(float deltaTime, Renderer& renderer, C
         vulkanContext->updateVertexBuffer(renderer->getVertices());
         vulkanContext->updateIndexBuffer(renderer->getIndices());
         vulkanContext->updateModelMatrixBuffer(renderer->getModelData());
+        vulkanContext->setStaticDraws(renderer->getStaticDraws());
         vulkanContext->setBlendedIndexOffset(renderer->getBlendedIndexOffset());
         vulkanContext->setScreenIndexOffset(renderer->getScreenIndexOffset());
         vulkanContext->drawFrame(*window);
@@ -157,6 +162,7 @@ void Engine::runFixed(
         vulkanContext->updateVertexBuffer(renderer->getVertices());
         vulkanContext->updateIndexBuffer(renderer->getIndices());
         vulkanContext->updateModelMatrixBuffer(renderer->getModelData());
+        vulkanContext->setStaticDraws(renderer->getStaticDraws());
         vulkanContext->setBlendedIndexOffset(renderer->getBlendedIndexOffset());
         vulkanContext->setScreenIndexOffset(renderer->getScreenIndexOffset());
         vulkanContext->drawFrame(*window);

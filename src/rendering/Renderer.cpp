@@ -23,10 +23,28 @@ Renderer::Renderer() {
     lighting.lights.push_back(Light{});
 }
 
+std::vector<Vertex> Renderer::bakeMesh(const Mesh& mesh, const Vect3& color, int textureIndex) {
+    std::vector<Vertex> result;
+    result.reserve(mesh.vertices.size());
+    for (const auto& mv : mesh.vertices) {
+        Vertex v;
+        v.position = mv.position;
+        v.color = color;
+        v.u = mv.u;
+        v.v = mv.v;
+        v.textureIndex = textureIndex;
+        v.modelIndex = -1; // transform comes per-draw, via the instance buffer
+        v.normal = mv.normal;
+        result.push_back(v);
+    }
+    return result;
+}
+
 void Renderer::beginFrame() {
     vertices.clear();
     indices.clear();
     modelData.clear();
+    staticDraws.clear();
     blendedIndexStart = 0;
     inBlendedBatch = false;
     screenIndexStart = 0;
@@ -183,7 +201,7 @@ void Renderer::drawText(const Font& font, const std::string& text, const Vect3& 
         return;
 
     beginBlended();
-    emitText(font, text, position, size / static_cast<float>(font.getPixelHeight()), color);
+    emitText(font, text, position, size / static_cast<float>(font.getPixelHeight()), color, true);
 }
 
 void Renderer::drawTextScreen(const Font& font, const std::string& text, float x, float y, float sizePx, const Vect3& color) {
@@ -217,7 +235,7 @@ void Renderer::drawPanelScreen(float x, float y, float width, float height, int 
     indices.push_back(pushUniqueVertex(v3));
 }
 
-void Renderer::emitText(const Font& font, const std::string& text, const Vect3& position, float scale, const Vect3& color) {
+void Renderer::emitText(const Font& font, const std::string& text, const Vect3& position, float scale, const Vect3& color, bool flipV) {
     const int textureIndex = font.getTextureIndex();
     const float baselineY = position.y + font.getAscent() * scale;
     float penX = 0.0f;
@@ -232,14 +250,20 @@ void Renderer::emitText(const Font& font, const std::string& text, const Vect3& 
 
         if (g.width > 0.0f && g.height > 0.0f) {
             float x0 = position.x + (penX + g.bearingX) * scale;
-            float y0 = baselineY + g.bearingY * scale;
             float x1 = x0 + g.width * scale;
-            float y1 = y0 + g.height * scale;
+            float yCap, yBot;
+            if (flipV) {
+                yCap = baselineY - g.bearingY * scale;
+                yBot = yCap - g.height * scale;
+            } else {
+                yCap = baselineY + g.bearingY * scale;
+                yBot = yCap + g.height * scale;
+            }
 
-            Vertex v0{ Vect3(x0, y0, position.z), color, g.uvLeft, g.uvTop, textureIndex, -1 };
-            Vertex v1{ Vect3(x1, y0, position.z), color, g.uvRight, g.uvTop, textureIndex, -1 };
-            Vertex v2{ Vect3(x1, y1, position.z), color, g.uvRight, g.uvBottom, textureIndex, -1 };
-            Vertex v3{ Vect3(x0, y1, position.z), color, g.uvLeft, g.uvBottom, textureIndex, -1 };
+            Vertex v0{ Vect3(x0, yCap, position.z), color, g.uvLeft, g.uvTop, textureIndex, -1 };
+            Vertex v1{ Vect3(x1, yCap, position.z), color, g.uvRight, g.uvTop, textureIndex, -1 };
+            Vertex v2{ Vect3(x1, yBot, position.z), color, g.uvRight, g.uvBottom, textureIndex, -1 };
+            Vertex v3{ Vect3(x0, yBot, position.z), color, g.uvLeft, g.uvBottom, textureIndex, -1 };
 
             indices.push_back(pushUniqueVertex(v0));
             indices.push_back(pushUniqueVertex(v1));
@@ -311,6 +335,18 @@ void Renderer::emitCubeModel(const Mat4& model, const Vect3& color, int textureI
 void Renderer::drawSphere(const Vect3& center, float radius, const Vect3& color,
                           const Material& material, int slices, int stacks) {
     drawMesh(Mesh::createSphere(radius, slices, stacks), center, color, material);
+}
+
+void Renderer::drawStaticMesh(uint32_t staticMeshId, const Mat4& model, const Material& material) {
+    if (modelData.size() >= MAX_MODELS)
+        throw std::runtime_error("Too many transformed objects for the model buffer! Increase MAX_MODELS.");
+
+    uint32_t modelIndex = addModel(model, material);
+    staticDraws.push_back(StaticModelDraw{ staticMeshId, modelIndex });
+}
+
+void Renderer::drawStaticMesh(uint32_t staticMeshId, const Vect3& center, const Mat4& rotation, const Vect3& scale, const Material& material) {
+    drawStaticMesh(staticMeshId, Mat4::translation(center.x, center.y, center.z) * rotation * Mat4::scale(scale.x, scale.y, scale.z), material);
 }
 
 void Renderer::drawMesh(const Mesh& mesh, const Vect3& center, const Vect3& color, const Material& material, const Mat4& rotation, const Vect3& scale, int textureIndex) {

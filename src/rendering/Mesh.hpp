@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../math/Vect3.hpp"
+#include "../math/Aabb.hpp"
 
 class Mesh {
 public:
@@ -22,6 +23,11 @@ public:
     static Mesh createSphere(float radius = 0.5f, int slices = 24, int stacks = 14);
     static Mesh createPlane(float width = 10.0f, float depth = 10.0f, int subdivisions = 1);
     static Mesh loadObj(const std::string& path);
+    static Mesh loadGltf(const std::string& path);
+    static Mesh loadModel(const std::string& path);
 
     void computeNormals();
+
+    // Axis-aligned bounds of the as-authored geometry (local space).
+    Aabb bounds() const;
 };

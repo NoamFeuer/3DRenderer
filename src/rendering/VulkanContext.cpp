@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <limits>
 #include <fstream>
+#include <unistd.h>
 #include <array>
 
 void VulkanContext::init(Window& window) {
@@ -36,6 +37,7 @@ void VulkanContext::init(Window& window) {
     updateTextureDescriptors();
     createVertexBuffer();
     createIndexBuffer();
+    createInstanceDataBuffer();
     createModelBuffer();
     allocateModelDescriptorSet();
     updateModelDescriptor();
@@ -100,6 +102,21 @@ void VulkanContext::cleanup() {
         vkFreeMemory(device, modelBufferMemory, nullptr);
         modelBufferMemory = VK_NULL_HANDLE;
     }
+
+    if (instanceBufferMapped != nullptr) {
+        vkUnmapMemory(device, instanceBufferMemory);
+        instanceBufferMapped = nullptr;
+    }
+    if (instanceBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, instanceBuffer, nullptr);
+        instanceBuffer = VK_NULL_HANDLE;
+    }
+    if (instanceBufferMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, instanceBufferMemory, nullptr);
+        instanceBufferMemory = VK_NULL_HANDLE;
+    }
+
+    cleanupStaticMeshPool();
 
     if (lightingBufferMapped != nullptr) {
         vkUnmapMemory(device, lightingBufferMemory);
@@ -712,16 +729,24 @@ void VulkanContext::createRenderPass() {
 
 namespace {
     std::vector<char> readFile(const std::string& filename) {
-        std::ifstream file(filename, std::ios::ate | std::ios::binary);
-        if (!file.is_open())
-            throw std::runtime_error("Failed to open shader file: " + filename);
-
-        size_t fileSize = static_cast<size_t>(file.tellg());
-        std::vector<char> buffer(fileSize);
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-        file.close();
-        return buffer;
+        std::vector<std::string> tries = { filename, "build/" + filename };
+        char cwd[4096];
+        if (getcwd(cwd, sizeof(cwd))) {
+            tries.push_back(std::string(cwd) + "/" + filename);
+            tries.push_back(std::string(cwd) + "/build/" + filename);
+        }
+        for (auto& t : tries) {
+            std::ifstream file(t, std::ios::ate | std::ios::binary);
+            if (file.is_open()) {
+                size_t fileSize = static_cast<size_t>(file.tellg());
+                std::vector<char> buffer(fileSize);
+                file.seekg(0);
+                file.read(buffer.data(), fileSize);
+                file.close();
+                return buffer;
+            }
+        }
+        throw std::runtime_error("Failed to open shader file: " + filename);
     }
 
     // Push constant block shared by the main and sky pipelines:
@@ -878,13 +903,13 @@ VkPipeline VulkanContext::buildPipeline(const char* vertexShader, const char* fr
     shaderStages[0] = vertShaderStageInfo;
     shaderStages[1] = fragShaderStageInfo;
 
-    auto bindingDescription = Vertex::getBindingDescription();
+    auto bindingDescriptions = Vertex::getBindingDescriptions();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
@@ -1120,13 +1145,13 @@ void VulkanContext::createShadowPipeline() {
     vertShaderStageInfo.module = vertShaderModule;
     vertShaderStageInfo.pName = "main";
 
-    auto bindingDescription = Vertex::getBindingDescription();
+    auto bindingDescriptions = Vertex::getBindingDescriptions();
     auto attributeDescriptions = Vertex::getAttributeDescriptions();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
@@ -1527,6 +1552,141 @@ void VulkanContext::createIndexBuffer() {
     std::cout << "Index buffer created (capacity: " << MAX_INDICES << " indices)\n";
 }
 
+// Binding-1 instance data (one int per static draw); the shader turns it into the
+// ModelData slot. Slots are spaced by instanceStride so the byDraw offset stays a
+// valid multiple of the hardware's minVertexInputBindingOffsetAlignment.
+void VulkanContext::createInstanceDataBuffer() {
+    // Offset alignment convention for the per-instance slots. 16 is a multiple
+    // of every device's minVertexInputBindingOffsetAlignment (a power of two
+    // <= 128, reported as 16 on all mainstream GPUs).
+    instanceStride = 16;
+
+    VkDeviceSize bufferSize = static_cast<VkDeviceSize>(instanceStride) * (MAX_STATIC_DRAWS + 1);
+    createBuffer(
+        bufferSize,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        instanceBuffer, instanceBufferMemory);
+
+    vkMapMemory(device, instanceBufferMemory, 0, bufferSize, 0, &instanceBufferMapped);
+
+    // Slot 0 is always -1 ("no model index"): streamed geometry reads its own
+    // per-vertex modelIndex, so the instance value must not override it.
+    std::memset(instanceBufferMapped, 0xFF, instanceStride);
+    std::cout << "Instance data buffer created (capacity: " << MAX_STATIC_DRAWS
+              << " static draws, stride " << instanceStride << ")\n";
+}
+
+// Copies a mesh into its own device-local vertex/index buffers, uploaded once
+// through a staged copy. Returns an id usable by the command buffer as a static
+// draw source for the lifetime of the context.
+uint32_t VulkanContext::uploadStaticMesh(const std::vector<Vertex>& vertices,
+                                         const std::vector<uint32_t>& indices) {
+    if (vertices.empty() || indices.empty())
+        throw std::runtime_error("Cannot upload an empty static mesh!");
+    if (vertices.size() > MAX_STATIC_VERTICES - staticVertexTotal)
+        throw std::runtime_error("Static mesh vertex pool exhausted! Increase MAX_STATIC_VERTICES.");
+    if (indices.size() > MAX_STATIC_INDICES - staticIndexTotal)
+        throw std::runtime_error("Static mesh index pool exhausted! Increase MAX_STATIC_INDICES.");
+
+    StaticMesh mesh;
+    mesh.vertexCount = static_cast<uint32_t>(vertices.size());
+    mesh.indexCount = static_cast<uint32_t>(indices.size());
+
+    // Device-local destination buffers.
+    createBuffer(
+        sizeof(Vertex) * vertices.size(),
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mesh.vertexBuffer, mesh.vertexMemory);
+    createBuffer(
+        sizeof(uint32_t) * indices.size(),
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mesh.indexBuffer, mesh.indexMemory);
+
+    // Stage the data in a host-visible buffer, then copy on the GPU.
+    VkBuffer staging;
+    VkDeviceMemory stagingMemory;
+    VkDeviceSize stagingSize = sizeof(Vertex) * vertices.size();
+    createBuffer(stagingSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 staging, stagingMemory);
+
+    void* mapped = nullptr;
+    vkMapMemory(device, stagingMemory, 0, stagingSize, 0, &mapped);
+    std::memcpy(mapped, vertices.data(), stagingSize);
+    vkUnmapMemory(device, stagingMemory);
+
+    VkCommandBuffer cmd = beginSingleTimeCommands();
+    VkBufferCopy vertexCopy{};
+    vertexCopy.size = stagingSize;
+    vkCmdCopyBuffer(cmd, staging, mesh.vertexBuffer, 1, &vertexCopy);
+    endSingleTimeCommands(cmd);
+
+    vkDestroyBuffer(device, staging, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+
+    stagingSize = sizeof(uint32_t) * indices.size();
+    createBuffer(stagingSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 staging, stagingMemory);
+    vkMapMemory(device, stagingMemory, 0, stagingSize, 0, &mapped);
+    std::memcpy(mapped, indices.data(), stagingSize);
+    vkUnmapMemory(device, stagingMemory);
+
+    cmd = beginSingleTimeCommands();
+    VkBufferCopy indexCopy{};
+    indexCopy.size = stagingSize;
+    vkCmdCopyBuffer(cmd, staging, mesh.indexBuffer, 1, &indexCopy);
+    endSingleTimeCommands(cmd);
+
+    vkDestroyBuffer(device, staging, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+
+    staticMeshes.push_back(mesh);
+    staticVertexTotal += mesh.vertexCount;
+    staticIndexTotal += mesh.indexCount;
+    std::cout << "Static mesh uploaded (id " << (staticMeshes.size() - 1) << ", "
+              << mesh.vertexCount << " verts, " << mesh.indexCount << " indices)\n";
+    return static_cast<uint32_t>(staticMeshes.size() - 1);
+}
+
+void VulkanContext::setStaticDraws(const std::vector<StaticModelDraw>& staticDraws) {
+    if (staticDraws.size() > MAX_STATIC_DRAWS)
+        throw std::runtime_error("Too many static draws! Increase MAX_STATIC_DRAWS.");
+
+    this->staticDraws = staticDraws;
+    updateStaticInstanceData();
+}
+
+void VulkanContext::updateStaticInstanceData() {
+    if (!instanceBufferMapped)
+        return;
+
+    uint32_t slot = 1;
+    for (const StaticModelDraw& draw : staticDraws) {
+        int32_t* ptr = reinterpret_cast<int32_t*>(
+            static_cast<char*>(instanceBufferMapped) + static_cast<VkDeviceSize>(slot) * instanceStride);
+        *ptr = static_cast<int32_t>(draw.modelIndex);
+        slot++;
+    }
+}
+
+void VulkanContext::cleanupStaticMeshPool() {
+    for (StaticMesh& mesh : staticMeshes) {
+        if (mesh.vertexBuffer != VK_NULL_HANDLE)
+            vkDestroyBuffer(device, mesh.vertexBuffer, nullptr);
+        if (mesh.vertexMemory != VK_NULL_HANDLE)
+            vkFreeMemory(device, mesh.vertexMemory, nullptr);
+        if (mesh.indexBuffer != VK_NULL_HANDLE)
+            vkDestroyBuffer(device, mesh.indexBuffer, nullptr);
+        if (mesh.indexMemory != VK_NULL_HANDLE)
+            vkFreeMemory(device, mesh.indexMemory, nullptr);
+    }
+    staticMeshes.clear();
+    staticVertexTotal = 0;
+    staticIndexTotal = 0;
+}
+
 void VulkanContext::allocateModelDescriptorSet() {
     VkDescriptorSetAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1770,7 +1930,7 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
     }
 
     // ---- Directional shadow pass (depth-only, casts shadows on the world) ----
-    if (shadowLightIndex >= 0 && firstBlended > 0) {
+    if (shadowLightIndex >= 0 && (firstBlended > 0 || !staticDraws.empty())) {
         VkRenderPassBeginInfo shadowPassInfo{};
         shadowPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         shadowPassInfo.renderPass = shadowRenderPass;
@@ -1809,12 +1969,30 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
         vkCmdPushConstants(cmdBuffer, shadowPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
                            0, sizeof(Mat4), &shadowLightMatrix);
 
-        VkBuffer vertexBuffers[] = { vertexBuffer };
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
+        VkBuffer vertexBuffers[] = { vertexBuffer, instanceBuffer };
+        VkDeviceSize offsets[] = { 0, 0 };
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 2, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDrawIndexed(cmdBuffer, firstBlended, 1, baseIndex, SKY_VERTEX_COUNT, 0);
+        if (firstBlended > 0)
+            vkCmdDrawIndexed(cmdBuffer, firstBlended, 1, baseIndex, SKY_VERTEX_COUNT, 0);
+
+        // GPU-resident static geometry casts shadows too; each draw carries its
+        // per-instance model index (slot k+1) for the depth transform.
+        uint32_t slot = 1;
+        for (const StaticModelDraw& draw : staticDraws) {
+            if (draw.staticMeshId < staticMeshes.size()) {
+                const StaticMesh& sm = staticMeshes[draw.staticMeshId];
+                VkBuffer meshVertexBuffers[] = { sm.vertexBuffer, instanceBuffer };
+                VkDeviceSize meshOffsets[] = {
+                    0, static_cast<VkDeviceSize>(slot) * instanceStride
+                };
+                vkCmdBindVertexBuffers(cmdBuffer, 0, 2, meshVertexBuffers, meshOffsets);
+                vkCmdBindIndexBuffer(cmdBuffer, sm.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmdBuffer, sm.indexCount, 1, 0, 0, 0);
+            }
+            slot++;
+        }
 
         vkCmdEndRenderPass(cmdBuffer);
 
@@ -1882,15 +2060,40 @@ void VulkanContext::recordCommandBuffer(VkCommandBuffer cmdBuffer, uint32_t imag
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(FramePushData), &push);
 
-    VkBuffer vertexBuffers[] = { vertexBuffer };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
+    VkBuffer vertexBuffers[] = { vertexBuffer, instanceBuffer };
+    VkDeviceSize offsets[] = { 0, 0 };
+    vkCmdBindVertexBuffers(cmdBuffer, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     // Sky backdrop first: index range [0, SKY_INDEX_COUNT), base vertex 0.
     if (skyEnabled) {
         vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyPipeline);
         vkCmdDrawIndexed(cmdBuffer, SKY_INDEX_COUNT, 1, 0, 0, 0);
+    }
+
+    // GPU-resident static geometry (opaque world models). Transported once at
+    // upload, drawn here per instance with the model data set from the instance
+    // buffer slot. Instance vertex data is otherwise homogenous, so the dynamic
+    // stream indexes the same ModelData store through its own per-vertex tag.
+    if (!staticDraws.empty()) {
+        vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        uint32_t slot = 1;
+        for (const StaticModelDraw& draw : staticDraws) {
+            if (draw.staticMeshId < staticMeshes.size()) {
+                const StaticMesh& sm = staticMeshes[draw.staticMeshId];
+                VkBuffer meshVertexBuffers[] = { sm.vertexBuffer, instanceBuffer };
+                VkDeviceSize meshOffsets[] = {
+                    0, static_cast<VkDeviceSize>(slot) * instanceStride
+                };
+                vkCmdBindVertexBuffers(cmdBuffer, 0, 2, meshVertexBuffers, meshOffsets);
+                vkCmdBindIndexBuffer(cmdBuffer, sm.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(cmdBuffer, sm.indexCount, 1, 0, 0, 0);
+            }
+            slot++;
+        }
+        // Restore the streamed geometry buffers for the dynamic draw below.
+        vkCmdBindVertexBuffers(cmdBuffer, 0, 2, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(cmdBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     }
 
     // Renderer content: indices from SKY_INDEX_COUNT onward, all offset to base

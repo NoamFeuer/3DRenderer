@@ -93,7 +93,7 @@ void main() {
             vec3 projShadow = shadowClip.xyz / max(shadowClip.w, 1e-4);
             vec2 shadowUV = projShadow.xy * 0.5 + 0.5;
             // Small constant bias on top of the pipeline's slope-scaled bias.
-            float shadow = texture(shadowMap, vec3(shadowUV, projShadow.z - 0.004));
+            float shadow = texture(shadowMap, vec3(shadowUV, projShadow.z - 0.0025));
             diffuse  *= shadow;
             specular *= shadow;
         }

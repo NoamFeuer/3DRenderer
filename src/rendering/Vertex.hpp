@@ -22,8 +22,24 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 6> getAttributeDescriptions() {
-        std::array<VkVertexInputAttributeDescription, 6> attributeDescriptions{};
+    // Binding 1: one int per instance holding the modelData index. Carries the
+    // per-draw transform for GPU-resident static meshes, whose vertices store
+    // modelIndex = -1. The dynamic (streamed) path sets this to -1 and reads the
+    // vertex attribute instead.
+    static VkVertexInputBindingDescription getInstanceBindingDescription() {
+        VkVertexInputBindingDescription bindingDescription{};
+        bindingDescription.binding = 1;
+        bindingDescription.stride = sizeof(int32_t);
+        bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+        return bindingDescription;
+    }
+
+    static std::array<VkVertexInputBindingDescription, 2> getBindingDescriptions() {
+        return { getBindingDescription(), getInstanceBindingDescription() };
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 7> getAttributeDescriptions() {
+        std::array<VkVertexInputAttributeDescription, 7> attributeDescriptions{};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -54,6 +70,11 @@ struct Vertex {
         attributeDescriptions[5].location = 5;
         attributeDescriptions[5].format = VK_FORMAT_R32G32B32_SFLOAT;
         attributeDescriptions[5].offset = offsetof(Vertex, normal);
+
+        attributeDescriptions[6].binding = 1;
+        attributeDescriptions[6].location = 6;
+        attributeDescriptions[6].format = VK_FORMAT_R32_SINT;
+        attributeDescriptions[6].offset = 0;
 
         return attributeDescriptions;
     }

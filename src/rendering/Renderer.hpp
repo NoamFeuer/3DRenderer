@@ -23,6 +23,10 @@ public:
 
     Renderer();
 
+    // Converts a Mesh into the engine's GPU vertex format so it can be uploaded
+    // once and drawn as GPU-resident geometry. color/tex are baked per mesh.
+    static std::vector<Vertex> bakeMesh(const Mesh& mesh, const Vect3& color, int textureIndex = -1);
+
     void beginFrame();
     void drawTriangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& color);
     void drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color);
@@ -43,12 +47,20 @@ public:
     void drawText(const Font& font, const std::string& text, const Vect3& position, float size, const Vect3& color = Vect3(1.0f, 1.0f, 1.0f));
     void drawTextScreen(const Font& font, const std::string& text, float x, float y, float sizePx, const Vect3& color = Vect3(1.0f, 1.0f, 1.0f));
 
+    // GPU-resident mesh helpers. Meshes are uploaded to device-local memory once
+    // via Engine::uploadStaticMesh (which returns a static mesh id); these draws
+    // then render that geometry with any per-draw transform, no re-upload.
+    // Static draws are opaque world geometry.
+    void drawStaticMesh(uint32_t staticMeshId, const Mat4& model, const Material& material = Material());
+    void drawStaticMesh(uint32_t staticMeshId, const Vect3& center, const Mat4& rotation, const Vect3& scale, const Material& material = Material());
+
     void drawPanelScreen(float x, float y, float width, float height, const Vect3& color);
     void drawPanelScreen(float x, float y, float width, float height, int textureIndex, const Vect3& color = Vect3(1.0f, 1.0f, 1.0f));
 
     const std::vector<Vertex>& getVertices() const { return vertices; }
     const std::vector<uint32_t>& getIndices() const { return indices; }
     const std::vector<ModelData>& getModelData() const { return modelData; }
+    const std::vector<StaticModelDraw>& getStaticDraws() const { return staticDraws; }
 
 
     uint32_t getBlendedIndexOffset() const;
@@ -59,7 +71,7 @@ private:
     uint32_t addModel(const Mat4& model, const Material& material);
     void beginBlended();
     void beginScreenText();
-    void emitText(const Font& font, const std::string& text, const Vect3& position, float scale, const Vect3& color);
+    void emitText(const Font& font, const std::string& text, const Vect3& position, float scale, const Vect3& color, bool flipV = false);
     void drawRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color, uint32_t modelIndex, const Vect3& normal = Vect3(0.0f, 0.0f, 0.0f));
     void drawTexturedRectangle(const Vect3& p1, const Vect3& p2, const Vect3& p3, const Vect3& p4, const Vect3& color, int textureIndex, uint32_t modelIndex, const Vect3& normal = Vect3(0.0f, 0.0f, 0.0f));
     void drawCubeWithTexture(const Vect3& center, const Vect3& color, int textureIndex, const Mat4& rotation, const Vect3& scale, const Material& material);
@@ -69,6 +81,7 @@ private:
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
     std::vector<ModelData> modelData;
+    std::vector<StaticModelDraw> staticDraws;
     uint32_t blendedIndexStart = 0;
     bool inBlendedBatch = false;
     uint32_t screenIndexStart = 0;

@@ -24,6 +24,9 @@ layout(location = 2) in vec2 inUV;
 layout(location = 3) in int inTexIndex;
 layout(location = 4) in int inModelIndex;
 layout(location = 5) in vec3 inNormal;
+// Instance-rate model index, used by GPU-resident static meshes. Their vertices
+// carry modelIndex = -1, so this attribute supplies the per-draw modelData slot.
+layout(location = 6) in int inStaticModelIndex;
 
 layout(location = 0) out vec3 fragColor;
 layout(location = 1) out vec2 fragUV;
@@ -35,12 +38,13 @@ layout(location = 6) out flat vec4 fragSpecShin;
 layout(location = 7) out flat int fragLit;
 
 void main() {
-    bool transformed = inModelIndex >= 0;
+    int modelIndex = (inModelIndex >= 0) ? inModelIndex : inStaticModelIndex;
+    bool transformed = modelIndex >= 0;
     vec4 worldPos;
     vec3 worldNormal;
 
     if (transformed) {
-        ModelData md = modelData.models[inModelIndex];
+        ModelData md = modelData.models[modelIndex];
         worldPos = md.model * vec4(inPosition, 1.0);
         worldNormal = mat3(md.normalMatrix) * inNormal;
         fragEmission = md.emissionUnlit;
