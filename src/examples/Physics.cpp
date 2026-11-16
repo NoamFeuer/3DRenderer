@@ -150,7 +150,7 @@ int main() {
                 if (consumeKeyPress(Key::R, input, wasR)) rebuild();
 
                 camera.yaw -= input.getMouseDeltaX() * mouseSensitivity;
-                camera.pitch += input.getMouseDeltaY() * mouseSensitivity;
+                camera.pitch -= input.getMouseDeltaY() * mouseSensitivity;
                 camera.pitch = std::clamp(camera.pitch, -maxPitch, maxPitch);
                 if (!paused) {
                     Vect3 forward = camera.getForward();
@@ -159,8 +159,8 @@ int main() {
                     if (input.isKeyDown(Key::S)) camera.position -= forward * (moveSpeed * dt);
                     if (input.isKeyDown(Key::D)) camera.position += right * (moveSpeed * dt);
                     if (input.isKeyDown(Key::A)) camera.position -= right * (moveSpeed * dt);
-                    if (input.isKeyDown(Key::Space)) camera.position.y -= moveSpeed * dt;
-                    if (input.isKeyDown(Key::LeftShift)) camera.position.y += moveSpeed * dt;
+                    if (input.isKeyDown(Key::Space)) camera.position.y += moveSpeed * dt;
+                    if (input.isKeyDown(Key::LeftShift)) camera.position.y -= moveSpeed * dt;
 
                     world.step(dt);
                 }

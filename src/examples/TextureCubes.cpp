@@ -15,7 +15,7 @@ int main() {
 
         engine.run([&](float deltaTime, Renderer& renderer, Camera& camera, Input& input) {
             camera.yaw -= input.getMouseDeltaX() * mouseSensitivity;
-            camera.pitch += input.getMouseDeltaY() * mouseSensitivity;
+            camera.pitch -= input.getMouseDeltaY() * mouseSensitivity;
 
             const float maxPitch = 1.5f;
             if (camera.pitch > maxPitch) camera.pitch = maxPitch;
@@ -28,8 +28,8 @@ int main() {
             if (input.isKeyDown(Key::S)) camera.position -= forward * (moveSpeed * deltaTime);
             if (input.isKeyDown(Key::D)) camera.position += right * (moveSpeed * deltaTime);
             if (input.isKeyDown(Key::A)) camera.position -= right * (moveSpeed * deltaTime);
-            if (input.isKeyDown(Key::Space)) camera.position.y -= moveSpeed * deltaTime;
-            if (input.isKeyDown(Key::LeftShift)) camera.position.y += moveSpeed * deltaTime;
+            if (input.isKeyDown(Key::Space)) camera.position.y += moveSpeed * deltaTime;
+            if (input.isKeyDown(Key::LeftShift)) camera.position.y -= moveSpeed * deltaTime;
 
             renderer.drawCube(Vect3(0.0f, 0.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), Mat4::identity(), Vect3(2.0f, 2.0f, 2.0f));
             renderer.drawTexturedCube(Vect3(4.0f, 0.0f, -3.0f), Vect3(1.0f, 1.0f, 1.0f), checkerTex, Mat4::rotationY(0.785f), Vect3(1.5f, 1.5f, 1.5f));

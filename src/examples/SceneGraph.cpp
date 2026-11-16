@@ -142,7 +142,7 @@ int main() {
             if (consumeKeyPress(Key::Q, input, wasQ)) paused = !paused;
 
             camera.yaw -= input.getMouseDeltaX() * mouseSensitivity;
-            camera.pitch += input.getMouseDeltaY() * mouseSensitivity;
+            camera.pitch -= input.getMouseDeltaY() * mouseSensitivity;
             if (camera.pitch > maxPitch) camera.pitch = maxPitch;
             if (camera.pitch < -maxPitch) camera.pitch = -maxPitch;
 
@@ -153,8 +153,8 @@ int main() {
                 if (input.isKeyDown(Key::S)) camera.position -= forward * (moveSpeed * deltaTime);
                 if (input.isKeyDown(Key::D)) camera.position += right * (moveSpeed * deltaTime);
                 if (input.isKeyDown(Key::A)) camera.position -= right * (moveSpeed * deltaTime);
-                if (input.isKeyDown(Key::Space)) camera.position.y -= moveSpeed * deltaTime;
-                if (input.isKeyDown(Key::LeftShift)) camera.position.y += moveSpeed * deltaTime;
+                if (input.isKeyDown(Key::Space)) camera.position.y += moveSpeed * deltaTime;
+                if (input.isKeyDown(Key::LeftShift)) camera.position.y -= moveSpeed * deltaTime;
 
                 for (Body* b : drawables)
                     b->update(deltaTime);
